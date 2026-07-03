@@ -1,0 +1,35 @@
+# Python bytecode & cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Configuration and secrets
+.env
+.env.local
+!.env.example
+
+# Project-specific data and results
+data/
+!src/data
+results/
+*.parquet
+*.npz
+paper/
+*.md
+!README.md
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# IDEs, editors, and tools
+.vscode/
+.idea/
+.claude/

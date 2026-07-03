@@ -1,0 +1,9 @@
+line-length = 100
+
+[lint]
+# E402: scripts legitimately insert PROJECT_ROOT into sys.path before src imports
+# E501: long lines tolerated in plotting/string-heavy code
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+"scripts/*" = ["E402"]
