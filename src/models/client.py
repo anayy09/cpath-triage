@@ -214,6 +214,66 @@ class Client:
         )
         return raw
 
+    def probe_logprobs(
+        self,
+        prompt_text: str,
+        image_path: Optional[str | Path] = None,
+        model: Optional[str] = None,
+        top_logprobs: int = 5,
+        max_tokens: int = 16,
+    ) -> dict:
+        """
+        Diagnostic: does the endpoint return token log-probabilities?
+
+        Makes one (non-retried) call requesting logprobs and reports whether the
+        endpoint accepted the parameter and returned a populated logprobs object.
+        This decides whether a logit / sequence-probability confidence baseline
+        is feasible; it is not part of the production inference path, which is why
+        the routing/consistency code never requests logprobs. Uses the shared
+        self._client so no OpenAI client is instantiated outside this module.
+
+        Returns a dict with keys: supported (bool), raw_logprobs_present (bool),
+        text (str sample), sample (first-token logprob detail or None), and error
+        (str) if the call was rejected.
+        """
+        model = model or self.model
+        content: list[dict] = []
+        if image_path is not None:
+            content.append(self._encode_tile(Path(image_path)))
+        content.append({"type": "text", "text": prompt_text})
+        messages = [{"role": "user", "content": content}]
+
+        try:
+            resp = self._client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.0,
+                logprobs=True,
+                top_logprobs=top_logprobs,
+            )
+        except (APIStatusError, APIConnectionError, APITimeoutError, TypeError, ValueError) as e:
+            return {"supported": False, "raw_logprobs_present": False,
+                    "error": f"{type(e).__name__}: {str(e)[:300]}", "sample": None}
+
+        choice = resp.choices[0]
+        lp = getattr(choice, "logprobs", None)
+        sample = None
+        populated = bool(lp is not None and getattr(lp, "content", None))
+        if populated:
+            first = lp.content[0]
+            sample = {
+                "token": getattr(first, "token", None),
+                "logprob": getattr(first, "logprob", None),
+                "n_top_logprobs": len(getattr(first, "top_logprobs", None) or []),
+            }
+        return {
+            "supported": populated,
+            "raw_logprobs_present": lp is not None,
+            "text": (choice.message.content or "")[:120],
+            "sample": sample,
+        }
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _encode_tile(self, tile_path: Path) -> dict:

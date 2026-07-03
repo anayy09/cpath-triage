@@ -59,6 +59,46 @@ def ece_score(
     return float(ece / n)
 
 
+def adaptive_ece_score(
+    confidences: np.ndarray,
+    correct: np.ndarray,
+    n_bins: int = 15,
+) -> float:
+    """
+    Adaptive (equal-mass) Expected Calibration Error.
+
+    Nixon et al. (2019) showed equal-width ECE is sensitive to the binning
+    scheme; equal-mass bins put the same number of samples in each bin, which
+    removes the empty/near-empty high-confidence bins that dominate the
+    equal-width estimate. Reported alongside the equal-width ece_score so the
+    calibration conclusions can be shown to hold across schemes.
+
+    Args:
+        confidences: 1-D float array in [0, 1].
+        correct:     1-D bool/int array (1 if prediction was correct).
+        n_bins:      Number of equal-count bins.
+
+    Returns:
+        Adaptive ECE as a float in [0, 1].
+    """
+    n = len(confidences)
+    if n == 0:
+        return float("nan")
+    order = np.argsort(confidences)
+    conf_sorted = confidences[order]
+    corr_sorted = correct[order].astype(float)
+    # Split indices into n_bins near-equal groups.
+    edges = np.linspace(0, n, n_bins + 1).astype(int)
+    ece = 0.0
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        if hi <= lo:
+            continue
+        c = conf_sorted[lo:hi]
+        y = corr_sorted[lo:hi]
+        ece += len(c) * abs(c.mean() - y.mean())
+    return float(ece / n)
+
+
 def mce_score(
     confidences: np.ndarray,
     correct: np.ndarray,
