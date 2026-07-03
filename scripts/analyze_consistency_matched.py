@@ -118,14 +118,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Matched-patch single-query baseline for consistency results")
     parser.add_argument("--model", default="medgemma-27b-it")
     parser.add_argument("--base-prompt-version", default="V3")
+    parser.add_argument("--split", choices=["val", "test"], default="val",
+                        help="Which consistency run to analyze. test looks in "
+                             "{version}_test and defaults the single-query baseline to "
+                             "the {version}_full_test predictions.")
     parser.add_argument("--full-pred-path", type=Path, default=None,
                         help="Full-scale predictions.parquet for the same prompt version. "
-                             "Defaults to results/zeroshot/{model}/{version}_full/predictions.parquet.")
+                             "Defaults to results/zeroshot/{model}/{version}_full[_test]/predictions.parquet.")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     model_slug = args.model.replace("/", "_").replace(":", "_")
-    cons_dir = PROJECT_ROOT / "results" / "consistency" / model_slug / args.base_prompt_version
+    version_dir = args.base_prompt_version + ("_test" if args.split == "test" else "")
+    cons_dir = PROJECT_ROOT / "results" / "consistency" / model_slug / version_dir
     cons_path = cons_dir / "predictions.parquet"
 
     if not cons_path.exists():
@@ -133,9 +138,10 @@ def main() -> int:
         print("Run scripts/run_consistency.py first.")
         return 1
 
+    full_suffix = f"{args.base_prompt_version}_full" + ("_test" if args.split == "test" else "")
     full_pred_path = args.full_pred_path or (
         PROJECT_ROOT / "results" / "zeroshot" / model_slug
-        / f"{args.base_prompt_version}_full" / "predictions.parquet"
+        / full_suffix / "predictions.parquet"
     )
     if not full_pred_path.exists():
         print(f"Full-scale predictions not found: {full_pred_path}")
