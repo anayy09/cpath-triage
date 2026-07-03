@@ -250,8 +250,9 @@ def run_consistency(
     out_dir: Path,
     full_pred_path: Path | None,
     estimate_only: bool,
+    split: str = "val",
 ) -> None:
-    split_labels = load_labels("val")
+    split_labels = load_labels(split)
     patches = _select_patches(split_labels, N_PER_CLASS, seed, full_pred_path)
     n_total = len(patches)
 
@@ -277,9 +278,9 @@ def run_consistency(
     variants = _build_variants(base_version)
     assert len(variants) == K
 
-    logger.info("Loading val images...")
-    val_images, _ = load_split_arrays("val")
-    logger.info("Val images loaded: shape=%s", val_images.shape)
+    logger.info("Loading %s images...", split)
+    val_images, _ = load_split_arrays(split)
+    logger.info("%s images loaded: shape=%s", split, val_images.shape)
 
     client = Client(model=model)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -503,13 +504,24 @@ def main() -> int:
             "If omitted, falls back to balanced random sampling."
         ),
     )
+    parser.add_argument(
+        "--split", choices=["val", "test"], default="val",
+        help=(
+            "Which split to run the consistency experiment on. Default val. "
+            "Use test to measure cross-center transfer of consistency routing; "
+            "pass --full-pred-path pointing at the {version}_full_test predictions "
+            "so the 1800-patch selection is stratified on the test split. Results "
+            "go to results/consistency/{model}/{version}_test/."
+        ),
+    )
     parser.add_argument("--estimate-only", action="store_true")
     args = parser.parse_args()
 
     model = args.model or os.environ.get("MEDGEMMA_MODEL", "medgemma-27b-it")
     model_slug = model.replace("/", "_").replace(":", "_")
+    version_dir = args.base_prompt_version + ("_test" if args.split == "test" else "")
     out_dir = (
-        PROJECT_ROOT / "results" / "consistency" / model_slug / args.base_prompt_version
+        PROJECT_ROOT / "results" / "consistency" / model_slug / version_dir
     )
 
     run_consistency(
@@ -519,6 +531,7 @@ def main() -> int:
         out_dir=out_dir,
         full_pred_path=args.full_pred_path,
         estimate_only=args.estimate_only,
+        split=args.split,
     )
     return 0
 

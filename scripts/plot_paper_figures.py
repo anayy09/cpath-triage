@@ -116,14 +116,18 @@ def plot_fullscale_routing() -> Path:
         ra = np.array(r["auto_confirm_acc"], dtype=float)
         rv = ~np.isnan(ra)
         ax.plot(rb[rv], ra[rv], "--", color="#888888", lw=1.2, alpha=0.8, label="Random (CNN-64 outcome)")
-        ax.axvline(0.15, color="black", lw=0.8, ls=":", alpha=0.6)
-        ax.set_xlabel("Fraction routed to specialist", fontsize=10)
+        ax.axvline(0.15, color="black", lw=0.9, ls=":", alpha=0.7)
+        ax.annotate("b = 0.15\n(Table 3 operating point)", xy=(0.15, 0.02),
+                    xytext=(0.28, 0.06), fontsize=7.5, color="black",
+                    arrowprops=dict(arrowstyle="->", lw=0.7, color="black"))
+        ax.set_xlabel("Fraction routed to specialist (budget b)", fontsize=10)
         ax.set_ylabel("Auto-confirm accuracy", fontsize=10)
         ax.set_xlim(0, 1)
         ax.set_title(f"{'Validation (NCT-CRC)' if split == 'val' else 'Test (CRC-VAL-HE-7K)'}", fontsize=11)
         ax.legend(fontsize=7.5, loc="lower left")
 
-    fig.suptitle("Risk-coverage routing curves, full-scale calibrated confidence", fontsize=12)
+    fig.suptitle("Selective-accuracy routing curves (auto-confirm accuracy vs coverage), "
+                 "full-scale calibrated confidence", fontsize=11)
     fig.tight_layout()
     out_path = PROJECT_ROOT / "results" / "routing" / "risk_coverage_fullscale_comparison.png"
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
