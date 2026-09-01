@@ -2,9 +2,12 @@
 scripts/download_data.py
 
 Download PathMNIST (MedMNIST v2) at 224 px into data/raw/, verify the splits,
-and print the on-disk footprint. PathMNIST source is NCT-CRC-HE-100K (train +
-val) and the external test set is CRC-VAL-HE-7K from a different clinical
-center. Keep the test set untouched until the cross-center stage.
+and print the on-disk footprint. PathMNIST's train and validation splits come
+from NCT-CRC-HE-100K (86 slides, NCT Heidelberg biobank and the UMM Mannheim
+archive) and the external test split from CRC-VAL-HE-7K (50 patients, NCT
+Heidelberg). The two collections were assembled independently and are
+patient-disjoint, but they draw on an overlapping institution, so the shift is
+a cohort-and-batch shift rather than a two-hospital one.
 
 Usage:
     python scripts/download_data.py

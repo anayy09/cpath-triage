@@ -25,6 +25,12 @@ Signals compared (all route the K=5 modal-vote outcome unless noted):
 
 Outputs:
     results/consistency/{model}/{run}/routing_signals.json
+    results/consistency/{model}/{run}/routing_curves_tie_expectation.png
+
+The figure supersedes routing_curves.png, which run_consistency.py wrote at
+inference time under the row-order tie convention and whose legend still carries
+the withdrawn 0.262 for mean-of-5 confidence. Manuscript Figure 9 is a copy of
+the file written here.
 
 Usage:
     python scripts/consistency_routing_table.py --split val
@@ -40,6 +46,10 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -84,6 +94,51 @@ def bootstrap_diff(
         "excludes_zero": bool(lo > 0 or hi < 0),
         "n_boot": n_boot,
     }
+
+
+def plot_routing_curves(
+    consistency: tuple[np.ndarray, np.ndarray],
+    mean_conf: tuple[np.ndarray, np.ndarray],
+    modal_correct: np.ndarray,
+    out_path: Path,
+    title: str,
+    seed: int,
+) -> None:
+    """
+    Redraw the manuscript's consistency-routing figure under the tie expectation.
+
+    The curves use tie_break="expected" rather than the Monte Carlo default. A
+    plotted curve should not move between runs, and the closed form is the exact
+    mean of what the Monte Carlo estimates, so the legend AUCs agree with the
+    table to the three decimals the manuscript prints.
+    """
+    cons_curve = risk_coverage_curve(*consistency, tie_break="expected")
+    conf_curve = risk_coverage_curve(*mean_conf, tie_break="expected")
+    rnd_curve = random_routing_curve(modal_correct, seed=seed)
+
+    budgets = np.asarray(cons_curve["budgets"])
+    rnd_acc = np.asarray(rnd_curve["auto_confirm_acc"])
+    rnd_sd = np.asarray(rnd_curve["std_acc"])
+
+    fig, ax = plt.subplots(figsize=(7.2, 5.0))
+    ax.fill_between(budgets, rnd_acc - rnd_sd, rnd_acc + rnd_sd, color="0.75", alpha=0.35, lw=0)
+    ax.plot(budgets, rnd_acc, color="0.4", ls="--", lw=1.8,
+            label=f"Random (AUC={rnd_curve['auc']:.3f})")
+    ax.plot(budgets, conf_curve["auto_confirm_acc"], color="#1f77b4", lw=1.8,
+            label=f"Mean confidence over K=5 (AUC={conf_curve['auc']:.3f})")
+    ax.plot(budgets, cons_curve["auto_confirm_acc"], color="#d62728", lw=1.8,
+            label=f"Consistency score (AUC={cons_curve['auc']:.3f})")
+    ax.axvline(0.15, color="black", ls=":", lw=1.2, label="15% routing budget")
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("Fraction routed to specialist")
+    ax.set_ylabel("Accuracy on auto-confirmed set")
+    ax.set_title(title)
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
 
 
 def main() -> int:
@@ -138,6 +193,14 @@ def main() -> int:
         rows[name] = {
             "auc": round(float(curve["auc"]), 4),
             "auc_sd_over_tie_orders": round(float(curve["auc_sd"]), 4),
+            # The observed spread across sampled tie orders, so the claim that
+            # two legitimate orderings of the same predictions land far apart is
+            # a measurement rather than an assertion.
+            "auc_min_over_tie_orders": round(float(curve["auc_min"]), 4),
+            "auc_max_over_tie_orders": round(float(curve["auc_max"]), 4),
+            "auc_range_over_tie_orders": round(
+                float(curve["auc_max"] - curve["auc_min"]), 4
+            ),
             "auc_expected_closed_form": round(float(curve["auc_expected"]), 4),
             "auc_row_order_superseded": round(float(curve["auc_row_order"]), 4),
             "tie_fraction": round(float(curve["tie_fraction"]), 4),
@@ -212,6 +275,17 @@ def main() -> int:
     out_path = cons_dir / "routing_signals.json"
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
+    split_label = "external test" if args.split == "test" else "validation"
+    fig_path = cons_dir / "routing_curves_tie_expectation.png"
+    plot_routing_curves(
+        signals["consistency_score"],
+        signals["mean_textual_conf"],
+        modal_correct,
+        fig_path,
+        f"Consistency routing vs baselines ({args.version}, {split_label}, n={len(df)})",
+        args.seed,
+    )
+
     print(f"=== Routing signals | {args.model} {args.version} {args.split} (n={len(df)}) ===")
     print(f"{'signal':<26}{'AUC':>8}{'sd':>8}{'was':>8}{'ties':>8}{'dist':>6}{'vs rnd':>9}")
     for name, r in rows.items():
@@ -225,6 +299,7 @@ def main() -> int:
               f"[{c['ci_2.5']:+.4f}, {c['ci_97.5']:+.4f}]  "
               f"{'excludes 0' if c['excludes_zero'] else 'includes 0'}")
     print(f"\nSaved: {out_path}")
+    print(f"Saved: {fig_path}")
     return 0
 
 

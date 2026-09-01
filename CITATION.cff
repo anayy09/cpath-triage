@@ -1,0 +1,55 @@
+cff-version: 1.2.0
+message: "If you use this software or the prediction artifacts it contains, please cite both the software and the paper below."
+title: "cpath-triage: diagnostic analysis of verbalized confidence in a medical vision-language model"
+abstract: >-
+  Evaluation and analysis code, plus the prediction artifacts behind every table
+  and figure, for a diagnostic study of verbalized confidence in MedGemma-27b-it
+  on colorectal H&E histopathology patches. Covers zero-shot classification,
+  temperature scaling and calibration metrics, selective-prediction routing with
+  explicit tie handling, a design-effect sensitivity analysis in place of
+  clustered intervals, and K=5 prompt-variant consistency routing.
+type: software
+authors:
+  - family-names: Sinhal
+    given-names: Anay
+    affiliation: "Department of Computer and Information Science and Engineering, University of Florida, Gainesville, FL, U.S.A."
+    email: sinhal.anay@ufl.edu
+  - family-names: Sinhal
+    given-names: Amit
+    affiliation: "Department of Computer Science and Engineering, JK Lakshmipat University, Jaipur, India"
+    email: amit.sinhal@jklu.edu.in
+  - family-names: Pandey
+    given-names: Ashish
+    affiliation: "Department of Data Science and Engineering, Manipal University Jaipur, Jaipur, India"
+    email: ashish.pandey@jaipur.manipal.edu
+  - family-names: Sinhal
+    given-names: Arpana
+    affiliation: "Department of Computer Applications, Manipal University Jaipur, Jaipur, India"
+    email: arpana.sinhal@jaipur.manipal.edu
+repository-code: "https://github.com/anayy09/cpath-triage"
+license: GPL-3.0-or-later
+keywords:
+  - histopathology
+  - vision-language model
+  - calibration
+  - selective prediction
+  - verbalized confidence
+  - uncertainty quantification
+  - colorectal
+# Set `version`, `date-released` and `doi` when the release is tagged and archived.
+# Leave them absent until then rather than writing an anticipated value.
+preferred-citation:
+  type: article
+  title: "Diagnosing Verbalized Confidence in a Medical Vision-Language Model for Selective Prediction on Colorectal Histopathology Patches: Calibration, Routing, and Robustness to Cohort Shift"
+  authors:
+    - family-names: Sinhal
+      given-names: Anay
+    - family-names: Sinhal
+      given-names: Amit
+    - family-names: Pandey
+      given-names: Ashish
+    - family-names: Sinhal
+      given-names: Arpana
+  journal: "Scientific Reports"
+  year: 2026
+  notes: "Under revision. Update with volume, article number and DOI on acceptance."
