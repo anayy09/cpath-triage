@@ -27,8 +27,10 @@ full-scale confidence takes 4 distinct values with 96% at one of them. When most
 pairs are tied, the ranking is mostly undetermined and any AUC that resolves ties
 by row order is reporting a property of the file, not of the model. An earlier
 version of this module ranked with a plain descending argsort, which orders tied
-values by row index; two legitimate row orderings of the same data gave AUC 0.266
-and 0.329.
+values by row index. Every signal record written under results/ now stores the
+row-order value beside the permutation-invariant one so the size of that defect
+stays quotable: on the 1,800-patch consistency subset the same consistency score
+gives 0.4585 by row order and 0.4307 by the tie expectation.
 
 Three tie policies are therefore available, all of which agree when there are no
 ties:
