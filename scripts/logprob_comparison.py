@@ -41,6 +41,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import rankdata
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -108,6 +109,51 @@ def paired_bootstrap(
     }
 
 
+def auroc_midrank(conf: np.ndarray, correct: np.ndarray) -> float:
+    """Mann-Whitney AUROC with mid-ranks, so ties are handled explicitly."""
+    pos, neg = correct.astype(bool), ~correct.astype(bool)
+    if pos.sum() == 0 or neg.sum() == 0:
+        return float("nan")
+    r = rankdata(conf)
+    return float((r[pos].sum() - pos.sum() * (pos.sum() + 1) / 2) / (pos.sum() * neg.sum()))
+
+
+def by_predicted_class(df: pd.DataFrame, min_n: int = 50) -> dict:
+    """
+    Confidence and accuracy per predicted class, plus the within-class AUROC.
+
+    This exists because the pooled AUROC of the label-token signal reverses
+    between splits while the within-class rankings do not. MedGemma is most
+    confident at the token level on the class it is worst at, and that class
+    holds most of its predictions, so pooling inverts a signal that is
+    informative inside every class. Reporting only the pooled number would hide
+    the mechanism, which is the same mistake the submitted manuscript made about
+    the verbalized signal.
+    """
+    out: dict = {}
+    for cls, sub in df.groupby("pred_label"):
+        rec = {
+            "n": len(sub),
+            "share_of_predictions": round(float(len(sub) / len(df)), 4),
+            "accuracy": round(float(sub["correct"].mean()), 4),
+            "mean_label_token_conf": round(float(sub["logprob_conf"].mean()), 4),
+            "mean_verbalized_conf": round(float(sub["verbalized_conf"].mean()), 4),
+        }
+        if len(sub) >= min_n and sub["correct"].nunique() == 2:
+            rec["within_class_auroc_label_token"] = round(
+                auroc_midrank(sub["logprob_conf"].to_numpy(float),
+                              sub["correct"].to_numpy(bool)), 4)
+            rec["within_class_auroc_verbalized"] = round(
+                auroc_midrank(sub["verbalized_conf"].to_numpy(float),
+                              sub["correct"].to_numpy(bool)), 4)
+        out[cls] = rec
+    ranked = sorted(out.items(), key=lambda kv: -kv[1]["n"])
+    return {
+        "min_n_for_within_class_auroc": min_n,
+        "classes": dict(ranked),
+    }
+
+
 def main() -> int:
     rows: dict[str, dict] = {}
     missing: list[str] = []
@@ -169,6 +215,7 @@ def main() -> int:
                 correct = usable["correct"].to_numpy(bool)
                 lt_sig = usable["logprob_conf"].to_numpy(float)
                 vb_sig = usable["verbalized_conf"].to_numpy(float)
+                entry["by_predicted_class"] = by_predicted_class(usable)
                 entry["bootstrap"] = {
                     "label_token_minus_random": paired_bootstrap(lt_sig, None, correct),
                     "verbalized_minus_random": paired_bootstrap(vb_sig, None, correct),
