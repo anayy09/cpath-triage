@@ -15,7 +15,8 @@ boundary mixes two different questions.
 The five variants, in the order run_consistency.py generates them:
     0  base prompt, unmodified. The in-session single-query baseline.
     1  architectural-focus instruction prepended.
-    2  nine classes listed alphabetically, to test listing-order bias.
+    2  built from V4 rather than V3: explicit step-by-step reasoning, alphabetical
+       class listing, disambiguation rules. The one structurally distinct variant.
     3  clinical context added ("colorectal surgical specimen").
     4  uncertainty reminder appended, which explicitly rescales CONFIDENCE.
 
@@ -53,7 +54,7 @@ N_BOOT = 1000
 VARIANT_DESCRIPTIONS = {
     0: "base prompt, unmodified (in-session single-query baseline)",
     1: "architectural-focus instruction prepended",
-    2: "class list in alphabetical order",
+    2: "V4-derived: step-by-step reasoning, alphabetical class list, disambiguation rules",
     3: "clinical context added",
     4: "uncertainty reminder appended (rescales the confidence elicitation)",
 }
