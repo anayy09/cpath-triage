@@ -199,9 +199,9 @@ def summarize(df: pd.DataFrame, n_boot: int, n_perm: int) -> dict:
     mi = confidence_mi_bits(conf, correct)
     auroc = auroc_midrank(conf, correct)
     ties = tie_statistics(conf)
-    occupied = int(len(np.unique(bin_confidence(conf))))
+    occupied = len(np.unique(bin_confidence(conf)))
     return {
-        "n": int(len(df)),
+        "n": len(df),
         "accuracy": round(float(correct.mean()), 4),
         "conf_correct_auroc": round(auroc, 4),
         "conf_correct_auroc_bootstrap": bootstrap_auroc(conf, correct, n_boot, SEED),
@@ -232,12 +232,12 @@ def by_predicted_class(df: pd.DataFrame) -> dict:
         conf = g["pred_confidence"].to_numpy(float)
         corr = g["correct"].to_numpy(bool)
         rows[str(label)] = {
-            "n": int(len(g)),
+            "n": len(g),
             "share_of_predictions": round(float(len(g) / len(df)), 4),
             "accuracy": round(float(corr.mean()), 4),
             "mean_confidence": round(float(conf.mean()), 4),
             "sd_confidence": round(float(conf.std(ddof=1)) if len(g) > 1 else 0.0, 4),
-            "n_distinct_confidences": int(len(np.unique(conf))),
+            "n_distinct_confidences": len(np.unique(conf)),
             "within_class_auroc": (
                 round(auroc_midrank(conf, corr), 4) if 0 < corr.sum() < len(corr) else None
             ),

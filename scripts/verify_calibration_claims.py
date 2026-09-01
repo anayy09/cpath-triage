@@ -119,7 +119,7 @@ def main() -> int:
             "fitted_T": T,
             "T_equals_optimiser_upper_bound": bool(abs(T - hi_bound) < 1e-9),
             "eval_partition": {
-                "n": int(len(ev)),
+                "n": len(ev),
                 "accuracy": round(acc_ev, 4),
                 "abs_half_minus_accuracy": round(abs(0.5 - acc_ev), 4),
                 "reported_calibrated_ece": reported_ev,
@@ -130,7 +130,7 @@ def main() -> int:
                 ),
             },
             "external_test": {
-                "n": int(len(te)),
+                "n": len(te),
                 "accuracy": round(acc_te, 4),
                 "abs_half_minus_accuracy": round(abs(0.5 - acc_te), 4),
                 "reported_calibrated_ece": reported_te,
