@@ -488,10 +488,21 @@ def main() -> int:
         )
 
         if elapsed > 300:
-            logger.warning(
-                "Epoch took %.0fs (>5 min). Upscaling in __getitem__ is the likely "
-                "bottleneck. Training will complete but slowly.", elapsed,
-            )
+            # The cause differs by mode, and attributing it to upscaling in mmap
+            # mode was wrong: there is no upscaling there, only page faults
+            # against the 12.6 GB memory-mapped array, which is what --force-mmap
+            # buys and is expected rather than a problem to fix.
+            if train_source == "native_224px_mmap":
+                logger.info(
+                    "Epoch took %.0fs. Expected in mmap mode: the cost is page faults "
+                    "against the memory-mapped 224 px array, not a misconfiguration.",
+                    elapsed,
+                )
+            else:
+                logger.warning(
+                    "Epoch took %.0fs (>5 min). Upscaling in __getitem__ is the likely "
+                    "bottleneck. Training will complete but slowly.", elapsed,
+                )
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
