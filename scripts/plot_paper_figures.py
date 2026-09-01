@@ -58,7 +58,7 @@ def _vlm_curves(model_slug: str, split_tag: str, T: float, seed: int = 42) -> di
     scaler = TemperatureScaler()
     scaler.T = T
     cal_conf = scaler.transform_scalar(raw_conf)
-    curve = risk_coverage_curve(cal_conf, correct)
+    curve = risk_coverage_curve(cal_conf, correct, tie_break="expected")
     rnd = random_routing_curve(correct, seed=seed)
     op15 = operating_point(cal_conf, correct, 0.15)
     return {"curve": curve, "random": rnd, "op15": op15, "n": len(df), "acc": float(correct.mean())}
@@ -76,7 +76,7 @@ def _cnn_curves(split: str, T: float, seed: int = 42) -> dict:
     pred = probs.argmax(axis=1)
     correct = (pred == labels)
     conf = probs.max(axis=1)
-    curve = risk_coverage_curve(conf, correct)
+    curve = risk_coverage_curve(conf, correct, tie_break="expected")
     rnd = random_routing_curve(correct, seed=seed)
     op15 = operating_point(conf, correct, 0.15)
     return {"curve": curve, "random": rnd, "op15": op15, "n": len(df), "acc": float(correct.mean())}

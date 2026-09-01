@@ -55,6 +55,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.triage.router import (
     _trapezoid,
+    operating_point,
     random_routing_curve,
     risk_coverage_curve,
     tie_statistics,
@@ -221,6 +222,9 @@ def main() -> int:
 
         boot = bootstrap_gap(conf, correct, args.n_boot, args.seed)
 
+        op_cal = operating_point(conf, correct, 0.15)
+        op_rnd = operating_point(np.full(len(correct), 0.5), correct, 0.15)
+
         prior_map, prior_default = priors[model]
         prior_conf = class_prior_signal(pred_labels, prior_map, prior_default)
         prior_auc = acc_coverage_auc(prior_conf, correct)
@@ -238,6 +242,8 @@ def main() -> int:
             "random_auc": round(float(rnd_auc), 4),
             "gap_point": round(float(cal_auc - rnd_auc), 4),
             "gap_bootstrap": boot,
+            "auto_confirm_acc_15pct": round(float(op_cal["auto_confirm_acc"]), 4),
+            "random_auto_confirm_acc_15pct": round(float(op_rnd["auto_confirm_acc"]), 4),
             "tie_fraction": round(float(ties["tie_fraction"]), 4),
             "n_distinct_confidences": ties["n_distinct"],
             "largest_tie_group_fraction": round(float(ties["largest_tie_group_fraction"]), 4),
