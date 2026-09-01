@@ -17,6 +17,9 @@ Outputs:
 Usage:
     python scripts/eval_cnn_224px.py
     python scripts/eval_cnn_224px.py --include-test
+    # Additional seed, reading and writing its own directory
+    python scripts/eval_cnn_224px.py --include-test --run-dir results/cnn/resnet18_224px_seed43
+
 """
 
 from __future__ import annotations
@@ -39,8 +42,7 @@ from src.data.pathmnist import LABEL_NAMES, load_split_arrays
 
 ALL_LABELS = [LABEL_NAMES[i] for i in range(len(LABEL_NAMES))]
 N_CLASSES = 9
-MODEL_PATH = PROJECT_ROOT / "results" / "cnn" / "resnet18_224px" / "best_model.pt"
-OUT_DIR = PROJECT_ROOT / "results" / "cnn" / "resnet18_224px"
+DEFAULT_RUN_DIR = PROJECT_ROOT / "results" / "cnn" / "resnet18_224px"
 
 
 @torch.no_grad()
@@ -100,22 +102,32 @@ def main() -> int:
     parser.add_argument("--include-test", action="store_true",
                         help="Also run on the test split (CRC-VAL-HE-7K).")
     parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument(
+        "--run-dir", type=str, default=None,
+        help="Directory holding best_model.pt, and where predictions are written. "
+             "Defaults to results/cnn/resnet18_224px. Set this when evaluating an "
+             "additional seed so the seed-42 predictions are not overwritten.",
+    )
     args = parser.parse_args()
 
-    if not MODEL_PATH.exists():
-        print(f"Model checkpoint not found: {MODEL_PATH}")
+    run_dir = Path(args.run_dir) if args.run_dir else DEFAULT_RUN_DIR
+    model_path = run_dir / "best_model.pt"
+    print(f"Run directory: {run_dir}")
+
+    if not model_path.exists():
+        print(f"Model checkpoint not found: {model_path}")
         print("Run scripts/train_cnn_224px.py first.")
         return 1
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    ckpt = torch.load(MODEL_PATH, map_location=device, weights_only=True)
+    ckpt = torch.load(model_path, map_location=device, weights_only=True)
     model = build_resnet18(N_CLASSES, pretrained=False).to(device)
     model.load_state_dict(ckpt["model_state"])
     print(f"Loaded checkpoint: epoch {ckpt['epoch']}, val_acc={ckpt['val_acc']:.4f}")
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     target_splits = ["val"]
     if args.include_test:
@@ -131,7 +143,7 @@ def main() -> int:
         acc = df["correct"].mean()
         print(f"  Accuracy: {acc:.4f}")
 
-        out_path = OUT_DIR / f"{split}_predictions.parquet"
+        out_path = run_dir / f"{split}_predictions.parquet"
         df.to_parquet(out_path, index=False)
         print(f"  Saved: {out_path}")
 
