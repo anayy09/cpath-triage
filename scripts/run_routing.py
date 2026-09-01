@@ -30,6 +30,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,8 +39,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.triage.router import risk_coverage_curve, random_routing_curve, operating_point
 from src.eval.calibration import TemperatureScaler
+from src.triage.router import operating_point, random_routing_curve, risk_coverage_curve
 
 OUT_DIR = PROJECT_ROOT / "results" / "routing"
 CAL_DIR = PROJECT_ROOT / "results" / "calibration"

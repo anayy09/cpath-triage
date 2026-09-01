@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -42,7 +43,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.eval.calibration import TemperatureScaler
-from src.triage.router import risk_coverage_curve, random_routing_curve, operating_point
+from src.triage.router import operating_point, random_routing_curve, risk_coverage_curve
 
 ZS = PROJECT_ROOT / "results" / "zeroshot"
 CAL = PROJECT_ROOT / "results" / "calibration"
@@ -57,7 +58,7 @@ def _vlm_curves(model_slug: str, split_tag: str, T: float, seed: int = 42) -> di
     scaler = TemperatureScaler()
     scaler.T = T
     cal_conf = scaler.transform_scalar(raw_conf)
-    curve = risk_coverage_curve(cal_conf, correct)
+    curve = risk_coverage_curve(cal_conf, correct, tie_break="expected")
     rnd = random_routing_curve(correct, seed=seed)
     op15 = operating_point(cal_conf, correct, 0.15)
     return {"curve": curve, "random": rnd, "op15": op15, "n": len(df), "acc": float(correct.mean())}
@@ -75,7 +76,7 @@ def _cnn_curves(split: str, T: float, seed: int = 42) -> dict:
     pred = probs.argmax(axis=1)
     correct = (pred == labels)
     conf = probs.max(axis=1)
-    curve = risk_coverage_curve(conf, correct)
+    curve = risk_coverage_curve(conf, correct, tie_break="expected")
     rnd = random_routing_curve(correct, seed=seed)
     op15 = operating_point(conf, correct, 0.15)
     return {"curve": curve, "random": rnd, "op15": op15, "n": len(df), "acc": float(correct.mean())}

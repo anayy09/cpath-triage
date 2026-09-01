@@ -25,20 +25,21 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")   # no display required; avoids GUI overhead
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
+from matplotlib import gridspec
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.pathmnist import (
-    LABEL_NAMES,
     LABEL_ABBREV,
+    LABEL_NAMES,
+    arr_to_pil,
     load_labels,
     load_split_arrays,
-    arr_to_pil,
 )
 
 RESULTS_DIR = PROJECT_ROOT / "results"

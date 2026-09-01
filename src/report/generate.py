@@ -25,7 +25,7 @@ from collections import Counter
 
 import pandas as pd
 
-from src.models.client import Client, SlideResult, Response
+from src.models.client import Client, Response, SlideResult
 
 
 def build_slide_result(

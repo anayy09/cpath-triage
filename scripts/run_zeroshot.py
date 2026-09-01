@@ -35,6 +35,7 @@ import time
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -49,12 +50,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.pathmnist import (
-    LABEL_NAMES,
     LABEL_ABBREV,
+    LABEL_NAMES,
+    arr_to_pil,
     balanced_indices,
     load_labels,
     load_split_arrays,
-    arr_to_pil,
 )
 from src.models.client import Client
 from src.models.prompts import get_prompt

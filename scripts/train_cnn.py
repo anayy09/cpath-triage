@@ -25,6 +25,7 @@ Outputs (under results/cnn/resnet18_64px/):
 
 Usage:
     python scripts/train_cnn.py [--epochs 40] [--batch-size 64] [--seed 42]
+                                [--out-dir results/cnn/resnet18_64px_seed43]
 """
 
 from __future__ import annotations
@@ -32,19 +33,21 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import random
 import sys
 import time
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
 from sklearn.metrics import accuracy_score, f1_score
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -60,7 +63,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATA_ROOT = PROJECT_ROOT / "data" / "raw"
+DATA_ROOT = Path(os.environ.get("PATHMNIST_DATA_ROOT", PROJECT_ROOT / "data" / "raw"))
 NPZ_64_PATH = DATA_ROOT / "pathmnist_64.npz"
 N_CLASSES = 9
 
@@ -231,6 +234,11 @@ def main() -> int:
                         help="Early stopping: max epochs without val_acc improvement.")
     parser.add_argument("--seed",        type=int,   default=42)
     parser.add_argument("--no-pretrained", action="store_true")
+    parser.add_argument(
+        "--out-dir", type=str, default=None,
+        help="Output directory. Defaults to results/cnn/resnet18_64px. Set this when "
+             "training additional seeds so the seed-42 artifacts are not overwritten.",
+    )
     args = parser.parse_args()
 
     _set_seed(args.seed)
@@ -243,8 +251,13 @@ def main() -> int:
     else:
         logger.warning("CUDA not available -- training on CPU will be very slow.")
 
-    out_dir = PROJECT_ROOT / "results" / "cnn" / "resnet18_64px"
+    out_dir = (
+        Path(args.out_dir)
+        if args.out_dir
+        else PROJECT_ROOT / "results" / "cnn" / "resnet18_64px"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Output directory: %s", out_dir)
 
     # ── Data ──
     splits = _load_64px_data()

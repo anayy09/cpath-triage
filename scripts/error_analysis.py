@@ -24,18 +24,22 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
 import pandas as pd
+from matplotlib import gridspec
 from sklearn.metrics import confusion_matrix
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.pathmnist import (
-    LABEL_NAMES, LABEL_ABBREV, load_split_arrays, arr_to_pil,
+    LABEL_ABBREV,
+    LABEL_NAMES,
+    arr_to_pil,
+    load_split_arrays,
 )
 from src.eval.calibration import TemperatureScaler
 

@@ -22,5 +22,10 @@ scipy>=1.13
 # System monitoring
 psutil>=5.9
 
-# Lint / integrity check
-ruff>=0.5
+# Lint / integrity check. Pinned to a minor series: rule sets change between
+# ruff releases, and an unpinned tool made scripts/check.sh fail on code it had
+# previously passed.
+ruff>=0.16,<0.17
+
+# Tests (router tie-handling regression suite)
+pytest>=8.0

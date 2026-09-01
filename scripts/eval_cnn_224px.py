@@ -21,21 +21,21 @@ Usage:
 
 from __future__ import annotations
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import DataLoader
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.train_cnn_224px import PrebuiltDataset, build_resnet18
 from src.data.pathmnist import LABEL_NAMES, load_split_arrays
-from scripts.train_cnn_224px import build_resnet18, PrebuiltDataset
 
 ALL_LABELS = [LABEL_NAMES[i] for i in range(len(LABEL_NAMES))]
 N_CLASSES = 9

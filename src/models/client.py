@@ -17,17 +17,16 @@ Usage:
     print(result.prediction, result.confidence)
 """
 
-import os
-import re
 import base64
 import logging
+import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
-from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -56,7 +55,7 @@ class SlideResult:
     confidence: float             # slide-level confidence (aggregated)
     tile_responses: list[Response] = field(default_factory=list)
     n_tiles_analyzed: int = 0
-    error: Optional[str] = None   # set if inference failed for this slide
+    error: str | None = None   # set if inference failed for this slide
 
 
 class Client:
@@ -105,8 +104,8 @@ class Client:
         tile_paths: list[str | Path],
         clinical_context: str,
         task: str,
-        prompt_text: Optional[str] = None,
-        model: Optional[str] = None,
+        prompt_text: str | None = None,
+        model: str | None = None,
         max_tokens: int = 512,
     ) -> Response:
         """
@@ -174,6 +173,86 @@ class Client:
             completion_tokens=completion_tokens,
         )
 
+    def analyze_tiles_with_logprobs(
+        self,
+        tile_paths: list[str | Path],
+        clinical_context: str,
+        task: str,
+        prompt_text: str | None = None,
+        model: str | None = None,
+        max_tokens: int = 512,
+        top_logprobs: int = 20,
+    ) -> tuple["Response", list[dict]]:
+        """
+        Same call as analyze_tiles, additionally returning the per-token
+        log-probability distribution.
+
+        This exists for the label-token confidence baseline (revision item C-11).
+        The prompt is byte-identical to the one analyze_tiles would send, so the
+        verbalized confidence and the label-token distribution come from the same
+        response and are paired on the same patch by construction.
+
+        Args:
+            tile_paths: Paths to PNG tile images.
+            clinical_context: Clinical metadata string appended to the prompt.
+            task: Task key used to select the default prompt if prompt_text is None.
+            prompt_text: Override prompt.
+            model: Override model.
+            max_tokens: Maximum tokens in the response.
+            top_logprobs: How many alternatives to request at each token position.
+                The endpoint may return fewer.
+
+        Returns:
+            Tuple of (Response, token_logprobs), where token_logprobs is a list of
+            per-position dicts with keys: token, logprob, and top (a list of
+            {token, logprob} alternatives at that position). The list is empty if
+            the endpoint did not return a logprobs object.
+
+        Raises:
+            RuntimeError: If all retry attempts are exhausted.
+            ValueError: If tile_paths is empty or any path does not exist.
+        """
+        if not tile_paths:
+            raise ValueError("tile_paths is empty.")
+
+        tile_paths = [Path(p) for p in tile_paths]
+        for p in tile_paths:
+            if not p.exists():
+                raise ValueError(f"Tile not found: {p}")
+        if len(tile_paths) > self.tiles_per_call:
+            tile_paths = tile_paths[: self.tiles_per_call]
+
+        model = model or self.model
+        prompt = prompt_text or _default_prompt(task, clinical_context)
+
+        content = [self._encode_tile(p) for p in tile_paths]
+        content.append({"type": "text", "text": prompt})
+
+        raw_text, prompt_tokens, completion_tokens, token_logprobs = self._call_with_retry(
+            model=model,
+            content=content,
+            max_tokens=max_tokens,
+            want_logprobs=True,
+            top_logprobs=top_logprobs,
+        )
+
+        prediction, confidence = _parse_prediction(raw_text, task)
+        rationale = _extract_rationale(raw_text)
+
+        return (
+            Response(
+                prediction=prediction,
+                confidence=confidence,
+                rationale=rationale,
+                raw_text=raw_text,
+                tile_paths=[str(p) for p in tile_paths],
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            ),
+            token_logprobs,
+        )
+
     def embed_text(self, text: str, model: str = "nomic-embed-text-v1.5") -> list[float]:
         """
         Embed a clinical text string using the specified embedding model.
@@ -217,8 +296,8 @@ class Client:
     def probe_logprobs(
         self,
         prompt_text: str,
-        image_path: Optional[str | Path] = None,
-        model: Optional[str] = None,
+        image_path: str | Path | None = None,
+        model: str | None = None,
         top_logprobs: int = 5,
         max_tokens: int = 16,
     ) -> dict:
@@ -290,7 +369,9 @@ class Client:
         model: str,
         content: list[dict],
         max_tokens: int,
-    ) -> tuple[str, int, int]:
+        want_logprobs: bool = False,
+        top_logprobs: int = 20,
+    ):
         """
         Call the chat completions endpoint with exponential backoff.
 
@@ -298,9 +379,13 @@ class Client:
             model: Model identifier string.
             content: List of content blocks (text + image_url).
             max_tokens: Token budget for response.
+            want_logprobs: Request per-token log-probabilities.
+            top_logprobs: Alternatives per position when want_logprobs is set.
 
         Returns:
-            Tuple of (response_text, prompt_tokens, completion_tokens).
+            (response_text, prompt_tokens, completion_tokens) normally, or
+            (response_text, prompt_tokens, completion_tokens, token_logprobs)
+            when want_logprobs is set.
 
         Raises:
             RuntimeError: If all retries are exhausted.
@@ -310,13 +395,20 @@ class Client:
 
         for attempt in range(1, self.max_retries + 1):
             try:
+                extra = (
+                    {"logprobs": True, "top_logprobs": top_logprobs}
+                    if want_logprobs
+                    else {}
+                )
                 response = self._client.chat.completions.create(
                     model=model,
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=0.0,  # deterministic inference
+                    **extra,
                 )
-                text = response.choices[0].message.content or ""
+                choice = response.choices[0]
+                text = choice.message.content or ""
                 if not text.strip():
                     logger.warning("Empty response on attempt %d", attempt)
                     if attempt < self.max_retries:
@@ -326,7 +418,22 @@ class Client:
                 usage = response.usage
                 prompt_tokens = usage.prompt_tokens if usage else 0
                 completion_tokens = usage.completion_tokens if usage else 0
-                return text, prompt_tokens, completion_tokens
+                if not want_logprobs:
+                    return text, prompt_tokens, completion_tokens
+
+                token_logprobs: list[dict] = []
+                lp = getattr(choice, "logprobs", None)
+                for pos in (getattr(lp, "content", None) or []):
+                    token_logprobs.append({
+                        "token": getattr(pos, "token", ""),
+                        "logprob": getattr(pos, "logprob", None),
+                        "top": [
+                            {"token": getattr(alt, "token", ""),
+                             "logprob": getattr(alt, "logprob", None)}
+                            for alt in (getattr(pos, "top_logprobs", None) or [])
+                        ],
+                    })
+                return text, prompt_tokens, completion_tokens, token_logprobs
 
             except APIStatusError as e:
                 if e.status_code in self.RETRYABLE_STATUS_CODES and attempt < self.max_retries:
@@ -473,6 +580,7 @@ def _selftest() -> int:
     Run with: python -m src.models.client --selftest
     """
     import io
+
     from PIL import Image
 
     logging.basicConfig(level=logging.INFO)

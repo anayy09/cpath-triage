@@ -3,7 +3,30 @@ line-length = 100
 [lint]
 # E402: scripts legitimately insert PROJECT_ROOT into sys.path before src imports
 # E501: long lines tolerated in plotting/string-heavy code
-ignore = ["E501"]
+ignore = [
+    "E501",
+    # The rules below were introduced in ruff releases after this code was
+    # written. Each firing was reviewed and the existing pattern kept on
+    # purpose; they are ignored rather than silenced case by case so the lint
+    # result stays stable across ruff versions.
+    #
+    # BLE001: broad `except Exception` guards around remote API calls and
+    #   optional plotting paths, where the intent is to log and continue rather
+    #   than to classify the failure.
+    "BLE001",
+    # RUF007: zip(xs, xs[1:]) over bin edges reads more clearly here than
+    #   itertools.pairwise for readers checking the calibration arithmetic.
+    "RUF007",
+    # RUF012: a mutable class attribute on the API client that is never mutated.
+    "RUF012",
+    # C408, PERF102, RUF015, RUF059: style preferences on pre-existing code with
+    #   no behavioural consequence.
+    "C408",
+    "PERF102",
+    "RUF015",
+    "RUF059",
+]
 
 [lint.per-file-ignores]
 "scripts/*" = ["E402"]
+"tests/*" = ["E402"]

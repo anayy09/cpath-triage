@@ -36,10 +36,14 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.triage.router import risk_coverage_curve, random_routing_curve
+from src.triage.router import (
+    random_routing_curve,
+    risk_coverage_curve,
+)
 
 SEED = 42
 N_BOOT = 1000
+N_TIE_REPEATS = 200
 
 
 def predictive_entropy_bits(labels: list[str]) -> float:
@@ -59,8 +63,12 @@ def bootstrap_auc_diff(
     diffs = np.empty(N_BOOT)
     for i in range(N_BOOT):
         idx = rng.integers(0, n, size=n)
-        auc_a = risk_coverage_curve(sig_a[idx], corr_a[idx])["auc"]
-        auc_b = risk_coverage_curve(sig_b[idx], corr_b[idx])["auc"]
+        # Ties resolved by their exact expectation within each resample. The
+        # resampling already randomises which tied patches appear; leaving the
+        # residual tie order to row position is what made the published point
+        # estimates disagree with these intervals (revision item C-01).
+        auc_a = risk_coverage_curve(sig_a[idx], corr_a[idx], tie_break="expected")["auc"]
+        auc_b = risk_coverage_curve(sig_b[idx], corr_b[idx], tie_break="expected")["auc"]
         diffs[i] = auc_a - auc_b
     lo, hi = np.percentile(diffs, [2.5, 97.5])
     return {
@@ -96,9 +104,23 @@ def main() -> int:
     consistency = df["consistency_score"].to_numpy(float)
     mean_conf = df["mean_textual_conf"].to_numpy(float)
 
-    auc_entropy = risk_coverage_curve(entropy_signal, modal_correct)["auc"]
-    auc_consistency = risk_coverage_curve(consistency, modal_correct)["auc"]
-    auc_meanconf = risk_coverage_curve(mean_conf, modal_correct)["auc"]
+    # Point estimates average over random tie orders and report the spread that
+    # ordering induces. These signals are coarse (5 to 10 distinct values), so the
+    # spread is not negligible and belongs next to the number.
+    curves = {
+        "entropy_over_k": risk_coverage_curve(
+            entropy_signal, modal_correct, tie_break="random", n_repeats=N_TIE_REPEATS, seed=SEED
+        ),
+        "consistency": risk_coverage_curve(
+            consistency, modal_correct, tie_break="random", n_repeats=N_TIE_REPEATS, seed=SEED
+        ),
+        "mean_textual_conf": risk_coverage_curve(
+            mean_conf, modal_correct, tie_break="random", n_repeats=N_TIE_REPEATS, seed=SEED
+        ),
+    }
+    auc_entropy = curves["entropy_over_k"]["auc"]
+    auc_consistency = curves["consistency"]["auc"]
+    auc_meanconf = curves["mean_textual_conf"]["auc"]
     auc_random = random_routing_curve(modal_correct, seed=SEED)["auc"]
 
     boot_cons_vs_entropy = bootstrap_auc_diff(consistency, modal_correct, entropy_signal, modal_correct)
@@ -112,13 +134,38 @@ def main() -> int:
     result = {
         "model": args.model,
         "version": args.version,
-        "n_patches": int(len(df)),
+        "n_patches": len(df),
         "mean_entropy_bits": round(float(entropy.mean()), 4),
         "routing_auc": {
             "consistency": round(float(auc_consistency), 4),
             "entropy_over_k": round(float(auc_entropy), 4),
             "mean_textual_conf": round(float(auc_meanconf), 4),
             "random": round(float(auc_random), 4),
+        },
+        "tie_handling": {
+            "tie_break": "random",
+            "n_repeats": N_TIE_REPEATS,
+            "auc_sd_over_tie_orders": {
+                k: round(float(v["auc_sd"]), 4) for k, v in curves.items()
+            },
+            "auc_row_order_superseded": {
+                k: round(float(v["auc_row_order"]), 4) for k, v in curves.items()
+            },
+            "tie_fraction": {
+                k: round(float(v["tie_fraction"]), 4) for k, v in curves.items()
+            },
+            "n_distinct": {k: int(v["n_distinct"]) for k, v in curves.items()},
+        },
+        "entropy_is_reparameterisation_of_consistency": {
+            "spearman_with_consistency": round(
+                float(pd.Series(entropy_signal).corr(pd.Series(consistency), method="spearman")), 6
+            ),
+            "note": (
+                "With K=5 the attainable entropies are 0.000, 0.722, {0.971, 1.371}, "
+                "{1.522, 1.922} and 2.322 bits, and those ranges do not overlap across "
+                "consecutive modal counts, so negative entropy is an order-preserving "
+                "relabelling of the modal fraction rather than an independent signal."
+            ),
         },
         "bootstrap": {
             "consistency_minus_entropy": boot_cons_vs_entropy,
