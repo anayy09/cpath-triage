@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 from pathlib import Path
 
 import numpy as np
@@ -34,8 +35,58 @@ from PIL import Image
 
 # The npz files are large (12.6 GB at 224 px) and are normally kept outside the
 # repository, so the location is overridable rather than hardcoded.
-DATA_ROOT = Path(os.environ.get("PATHMNIST_DATA_ROOT", "data/raw"))
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_DATA_POINTER = _REPO_ROOT / "data" / "DATA.txt"
+
+
+def resolve_data_root() -> Path:
+    """
+    Locate the directory holding pathmnist_{64,224}.npz.
+
+    Three sources, in order: the PATHMNIST_DATA_ROOT environment variable, a
+    `data/DATA.txt` pointer file naming the npz paths, then `<repo>/data/raw`.
+    The result is always absolute. The previous default was the relative string
+    "data/raw", which resolved against the working directory, so the same script
+    read different files depending on where it was launched from.
+
+    DATA.txt exists because the archives live outside the repository on this
+    machine; it is parsed rather than merely documented so that a checkout with
+    the pointer in place works without anyone remembering to export a variable.
+    """
+    env = os.environ.get("PATHMNIST_DATA_ROOT")
+    if env:
+        return Path(env).expanduser().resolve()
+
+    if _DATA_POINTER.exists():
+        try:
+            text = _DATA_POINTER.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for quoted in re.findall(r'"([^"]+)"', text):
+            candidate = Path(quoted).expanduser()
+            parent = candidate.parent if candidate.suffix == ".npz" else candidate
+            if parent.is_dir():
+                return parent.resolve()
+
+    return (_REPO_ROOT / "data" / "raw").resolve()
+
+
+DATA_ROOT = resolve_data_root()
 NPZ_PATH = DATA_ROOT / "pathmnist_224.npz"
+NPZ_64_PATH = DATA_ROOT / "pathmnist_64.npz"
+
+
+def missing_data_message(npz_path: Path) -> str:
+    """The one message every caller shows when an archive is absent."""
+    return (
+        f"Data file not found: {npz_path}\n"
+        f"Resolved data root: {DATA_ROOT}\n"
+        "Point at an existing copy with PATHMNIST_DATA_ROOT, or record the paths "
+        f"in {_DATA_POINTER}, or download it with scripts/download_data.py.\n"
+        "Nothing is downloaded automatically: the 224 px archive is 12.6 GB and "
+        "the repository default sits inside a synced folder."
+    )
+
 
 # PathMNIST label index to canonical name (MedMNIST v2, Kather et al. classes)
 LABEL_NAMES: dict[int, str] = {
@@ -82,9 +133,7 @@ def load_labels(split: str, npz_path: Path = NPZ_PATH) -> np.ndarray:
     if split not in _VALID_SPLITS:
         raise ValueError(f"split must be one of {_VALID_SPLITS}, got {split!r}")
     if not npz_path.exists():
-        raise FileNotFoundError(
-            f"Data file not found: {npz_path}. Run scripts/download_data.py first."
-        )
+        raise FileNotFoundError(missing_data_message(npz_path))
     npz = np.load(npz_path)
     labels = npz[_npz_key(split, "labels")].squeeze().astype(np.int32)
     npz.close()
@@ -111,9 +160,7 @@ def load_split_arrays(
     if split not in _VALID_SPLITS:
         raise ValueError(f"split must be one of {_VALID_SPLITS}, got {split!r}")
     if not npz_path.exists():
-        raise FileNotFoundError(
-            f"Data file not found: {npz_path}. Run scripts/download_data.py first."
-        )
+        raise FileNotFoundError(missing_data_message(npz_path))
     npz = np.load(npz_path)
     images = npz[_npz_key(split, "images")]   # (N, H, W, 3) uint8
     labels = npz[_npz_key(split, "labels")].squeeze().astype(np.int32)
@@ -187,9 +234,7 @@ def load_train_mmap(npz_path: Path = NPZ_PATH) -> np.ndarray:
         a regular ndarray depending on the npz compression format.
     """
     if not npz_path.exists():
-        raise FileNotFoundError(
-            f"Data file not found: {npz_path}. Run scripts/download_data.py first."
-        )
+        raise FileNotFoundError(missing_data_message(npz_path))
     npz = np.load(npz_path, mmap_mode="r")
     return npz["train_images"]
 

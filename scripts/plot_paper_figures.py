@@ -155,12 +155,30 @@ def plot_cross_center_bars() -> Path:
     val_acc = [mg_val["accuracy"], g3_val["accuracy"], cnn64["val_accuracy"], cnn224["val_accuracy"]]
     test_acc = [mg_test["accuracy"], g3_test["accuracy"], cnn64["test_accuracy"], cnn224["test_accuracy"]]
 
+    # Error bars on the CNN rows only. The VLM rows are full-split evaluations of
+    # a fixed remote model, so there is no seed to vary; the CNNs were trained
+    # three times each and the spread belongs on the figure that carries the
+    # resolution comparison.
+    val_err = [0.0, 0.0, 0.0, 0.0]
+    test_err = [0.0, 0.0, 0.0, 0.0]
+    seeds_path = CNN / "multiseed_summary.json"
+    if seeds_path.exists():
+        seeds = json.loads(seeds_path.read_text())["resolutions"]
+        for i, key in ((2, "64px"), (3, "224px")):
+            res = seeds.get(key, {})
+            if res.get("n_present", 0) > 1:
+                val_err[i] = res["val_accuracy"]["sd"]
+                test_err[i] = res["test_accuracy"]["sd"]
+
     x = np.arange(len(models))
     width = 0.35
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    b1 = ax.bar(x - width / 2, val_acc, width, label="Validation (NCT-CRC)", color="#4878CF")
-    b2 = ax.bar(x + width / 2, test_acc, width, label="Test (CRC-VAL-HE-7K)", color="#D65F5F")
+    ebar = {"ecolor": "#333333", "capsize": 3, "error_kw": {"elinewidth": 1.0}}
+    b1 = ax.bar(x - width / 2, val_acc, width, label="Validation (NCT-CRC)", color="#4878CF",
+                yerr=val_err, **ebar)
+    b2 = ax.bar(x + width / 2, test_acc, width, label="Test (CRC-VAL-HE-7K)", color="#D65F5F",
+                yerr=test_err, **ebar)
 
     for bars in (b1, b2):
         for bar in bars:
@@ -176,16 +194,17 @@ def plot_cross_center_bars() -> Path:
     ax.set_xticklabels(models, fontsize=9)
     ax.set_ylabel("Accuracy", fontsize=11)
     ax.set_ylim(0, 1.15)
-    ax.set_title("Cross-center accuracy: validation vs. external test", fontsize=12)
-    ax.legend(fontsize=9)
+    ax.set_title("Cohort shift: validation versus external test accuracy", fontsize=12)
+    ax.legend(fontsize=9, loc="upper left")
     fig.tight_layout()
     out_path = PROJECT_ROOT / "results" / "stage6" / "cross_center_accuracy_bars.png"
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     print("\nCross-center figure verification against Table 4:")
-    for name, v, t in zip(models, val_acc, test_acc):
-        print(f"  {name:20s} val={v:.4f}  test={t:.4f}  delta={t - v:+.4f}")
+    for name, v, t, ve, te in zip(models, val_acc, test_acc, val_err, test_err):
+        bar = f"  {name:20s} val={v:.4f}  test={t:.4f}  delta={t - v:+.4f}"
+        print(bar + (f"  (seed sd: val {ve:.4f}, test {te:.4f})" if te else ""))
     return out_path
 
 

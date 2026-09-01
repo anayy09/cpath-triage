@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -38,7 +37,8 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-DATA_ROOT = Path(os.environ.get("PATHMNIST_DATA_ROOT", PROJECT_ROOT / "data" / "raw"))
+from src.data.pathmnist import DATA_ROOT, missing_data_message
+
 SPLITS = ("train", "val", "test")
 EXPECTED_SIZES = {"train": 89_996, "val": 10_004, "test": 7_180}
 
@@ -60,8 +60,7 @@ def main() -> int:
     npz_224 = DATA_ROOT / "pathmnist_224.npz"
     for p in (npz_64, npz_224):
         if not p.exists():
-            print(f"ERROR: missing {p}", file=sys.stderr)
-            print("Set PATHMNIST_DATA_ROOT to the directory holding the npz files.", file=sys.stderr)
+            print(missing_data_message(p), file=sys.stderr)
             return 1
 
     print(f"64 px archive : {npz_64}")

@@ -15,9 +15,17 @@ Usage:
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-DATA_ROOT = Path("data/raw")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# The same resolver every reader uses, so the archive lands where the analysis
+# scripts will look for it. The previous "data/raw" was relative to the working
+# directory, so a download could land somewhere nothing reads.
+from src.data.pathmnist import DATA_ROOT
+
 SIZE_BUDGET_GB = 25.0
 
 # Expected official split sizes for PathMNIST.
@@ -63,7 +71,7 @@ def main() -> int:
         print("OVER BUDGET. Remove the high-res variant or use a smaller size.")
         return 1
 
-    print("Done. Test split (CRC-VAL-HE-7K) is the external center; do not touch it until Stage 6.")
+    print("Done. The external test split (CRC-VAL-HE-7K) is held out; log every use of it.")
     return 0
 
 

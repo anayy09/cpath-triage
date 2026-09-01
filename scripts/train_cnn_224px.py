@@ -36,7 +36,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import random
 import sys
 import time
@@ -58,14 +57,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.pathmnist import (
     LABEL_NAMES,
+    NPZ_64_PATH,
     load_labels,
     load_split_arrays,
     load_train_mmap,
+    missing_data_message,
 )
-
-NPZ_64_PATH = Path(
-    os.environ.get("PATHMNIST_DATA_ROOT", PROJECT_ROOT / "data" / "raw")
-) / "pathmnist_64.npz"
 
 ALL_LABELS = [LABEL_NAMES[i] for i in range(len(LABEL_NAMES))]
 
@@ -411,12 +408,7 @@ def main() -> int:
 
     if train_ds is None:
         if not NPZ_64_PATH.exists():
-            raise FileNotFoundError(
-                f"Fallback 64px npz not found: {NPZ_64_PATH}. "
-                "Run scripts/download_data.py or: "
-                "python -c \"from medmnist import PathMNIST; "
-                "PathMNIST(split='train', download=True, size=64, root='data/raw')\""
-            )
+            raise FileNotFoundError(missing_data_message(NPZ_64_PATH))
         logger.info("Loading 64px train split (~1.1 GB uint8) for upscaled-224px training...")
         npz64 = np.load(NPZ_64_PATH)
         train64_imgs = np.array(npz64["train_images"])

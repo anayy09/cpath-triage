@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import random
 import sys
 import time
@@ -52,7 +51,11 @@ from torch.utils.data import DataLoader, Dataset
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data.pathmnist import LABEL_NAMES
+from src.data.pathmnist import (
+    LABEL_NAMES,
+    NPZ_64_PATH,
+    missing_data_message,
+)
 
 ALL_LABELS = [LABEL_NAMES[i] for i in range(len(LABEL_NAMES))]
 
@@ -63,8 +66,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATA_ROOT = Path(os.environ.get("PATHMNIST_DATA_ROOT", PROJECT_ROOT / "data" / "raw"))
-NPZ_64_PATH = DATA_ROOT / "pathmnist_64.npz"
 N_CLASSES = 9
 
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
@@ -123,17 +124,18 @@ def build_resnet18(n_classes: int, pretrained: bool = True) -> nn.Module:
 # ── Data loading ──────────────────────────────────────────────────────────────
 
 def _load_64px_data() -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Load or download the 64 px PathMNIST npz. Returns {split: (images, labels)}."""
-    if not NPZ_64_PATH.exists():
-        logger.info("pathmnist_64.npz not found -- downloading via medmnist ...")
-        try:
-            from medmnist import PathMNIST
-        except ImportError as exc:
-            raise ImportError("medmnist not installed. Run: pip install medmnist") from exc
-        for split in ("train", "val", "test"):
-            PathMNIST(split=split, download=True, size=64, root=str(DATA_ROOT))
+    """
+    Load the 64 px PathMNIST npz. Returns {split: (images, labels)}.
 
-    logger.info("Loading pathmnist_64.npz ...")
+    This used to download the archive when it was absent. It no longer does.
+    The default root is inside the repository, which on this machine is inside a
+    synced folder, so a missing file turned a five-second eval into a multi-GB
+    download into the wrong place. Downloading is scripts/download_data.py's job.
+    """
+    if not NPZ_64_PATH.exists():
+        raise FileNotFoundError(missing_data_message(NPZ_64_PATH))
+
+    logger.info("Loading %s ...", NPZ_64_PATH)
     npz = np.load(NPZ_64_PATH)
     splits: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for split in ("train", "val", "test"):
