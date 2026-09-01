@@ -93,8 +93,10 @@ def run_evaluation(
         raise ValueError(f"split must be 'val' or 'test', got {split!r}")
     if split == "test":
         logger.warning(
-            "Running on TEST split (CRC-VAL-HE-7K). "
-            "This is the held-out cross-center set. Touch it only once."
+            "Running on TEST split (CRC-VAL-HE-7K), the external cohort. "
+            "Every access is a use of held-out data; log it. An earlier version "
+            "of this warning claimed the split is touched once, which the "
+            "manuscript withdrew because it is not what happened."
         )
 
     # Build the sample list first to get the true count for the estimate
