@@ -1,0 +1,164 @@
+"""
+scripts/logprob_comparison.py
+
+Collect the four log-probability runs into the single comparison table the
+manuscript quotes (revision item C-11, Decision 1). No API calls: reads the
+metrics written by scripts/run_logprob_confidence.py.
+
+Why this exists rather than quoting four files. Decision 1 asks for the
+label-token confidence to get "the same treatment the verbalized confidence
+gets", across two models and two splits. That is sixteen numbers whose whole
+point is the comparison between them, so they should come from one artifact
+with one provenance rather than be transcribed from four.
+
+One reporting hazard this script exists to surface. Mutual information here is
+the plug-in estimator over 15 equal-width bins, the same scheme used everywhere
+else in the paper, and under that scheme MI is *not* comparable between the two
+confidence sources. The label-token signal is near-continuous and heavily peaked
+near 1.0, so most of its mass falls in the top bin and the estimator sees little
+variation, while the verbalized signal takes a handful of values spread across
+the range. On Gemma-3 this inverts the ordering: MI ranks the verbalized signal
+far above the label-token signal while AUROC ranks them the other way round.
+
+The rank-based statistics do not have this problem, because they depend only on
+ordering. So the manuscript leads with AUROC and selective-accuracy AUC, reports
+MI with the artifact named, and this script computes the diagnostic that makes
+the artifact checkable: the fraction of each signal's mass in its single most
+occupied bin, and the number of the 15 bins it occupies at all.
+
+Outputs:
+    results/logprob_confidence/comparison.json
+
+Usage:
+    python scripts/logprob_comparison.py
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+LP_ROOT = PROJECT_ROOT / "results" / "logprob_confidence"
+MODELS = ("medgemma-27b-it", "gemma-3-27b-it")
+SPLITS = ("val", "test")
+SOURCES = ("label_token_confidence", "verbalized_confidence_same_patches")
+N_BINS = 15
+
+
+def bin_occupancy(x: np.ndarray, n_bins: int = N_BINS) -> dict:
+    """How concentrated a signal is under the paper's equal-width binning."""
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    bins = np.clip(np.digitize(x, edges[1:-1]), 0, n_bins - 1)
+    counts = np.bincount(bins, minlength=n_bins)
+    return {
+        "n_bins": n_bins,
+        "n_occupied": int((counts > 0).sum()),
+        "largest_bin_fraction": round(float(counts.max() / len(x)), 4),
+    }
+
+
+def main() -> int:
+    rows: dict[str, dict] = {}
+    missing: list[str] = []
+
+    for model in MODELS:
+        for split in SPLITS:
+            mpath = LP_ROOT / model / split / "metrics.json"
+            ppath = LP_ROOT / model / split / "predictions.parquet"
+            key = f"{model}|{split}"
+            if not mpath.exists():
+                missing.append(str(mpath.relative_to(PROJECT_ROOT)))
+                continue
+            m = json.loads(mpath.read_text(encoding="utf-8"))
+            if SOURCES[0] not in m:
+                missing.append(f"{key} (no usable responses)")
+                continue
+
+            entry: dict = {
+                "model": model,
+                "split": split,
+                "n": m[SOURCES[0]]["n"],
+                "accuracy": m[SOURCES[0]]["accuracy"],
+                "sampling": m["sampling"],
+                "design": m["design"],
+                "n_label_span_missing": m["n_label_span_missing"],
+                "n_call_failed": m["n_call_failed"],
+                "request_window_utc": m["endpoint"]["request_window_utc"],
+            }
+
+            occ = {}
+            if ppath.exists():
+                df = pd.read_parquet(ppath)
+                usable = df[df["logprob_conf"].notna() & ~df["call_failed"]]
+                occ = {
+                    "label_token_confidence": bin_occupancy(
+                        usable["logprob_conf"].to_numpy(float)),
+                    "verbalized_confidence_same_patches": bin_occupancy(
+                        usable["verbalized_conf"].to_numpy(float)),
+                }
+
+            for src in SOURCES:
+                s = dict(m[src])
+                if src in occ:
+                    s["bin_occupancy"] = occ[src]
+                entry[src] = s
+
+            lt, vb = m[SOURCES[0]], m[SOURCES[1]]
+            entry["label_token_minus_verbalized"] = {
+                "auroc": round(lt["auroc_midrank"] - vb["auroc_midrank"], 4),
+                "selective_accuracy_auc": round(
+                    lt["selective_accuracy_auc"] - vb["selective_accuracy_auc"], 4),
+                "ece": round(lt["ece"] - vb["ece"], 4),
+                "note": "Positive AUROC and AAUC favour the label-token signal.",
+            }
+            rows[key] = entry
+
+    if not rows:
+        print("No log-probability metrics found. Run scripts/run_logprob_confidence.py first.",
+              file=sys.stderr)
+        return 1
+
+    out = {
+        "n_bins_for_mi_and_ece": N_BINS,
+        "mi_comparability_warning": (
+            "Mutual information uses the plug-in estimator over 15 equal-width bins, as "
+            "elsewhere in the paper. It is not comparable between these two confidence "
+            "sources: the label-token signal is near-continuous and peaked near 1.0, so its "
+            "mass concentrates in the top bin, while the verbalized signal takes a few values "
+            "spread across the range. Compare the rank-based statistics, AUROC and "
+            "selective-accuracy AUC, and read the bin_occupancy fields before quoting MI."
+        ),
+        "runs": rows,
+        "missing": missing,
+    }
+    out_path = LP_ROOT / "comparison.json"
+    out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+
+    print(f"=== Label-token vs verbalized confidence ({len(rows)}/4 runs present) ===")
+    hdr = f"{'run':28}{'source':12}{'AUROC':>8}{'AAUC':>8}{'rnd':>8}{'gap':>9}{'ECE':>8}{'MI':>9}{'occ':>5}{'top':>7}"
+    print(hdr)
+    for key, e in rows.items():
+        for src, tag in zip(SOURCES, ("label-tok", "verbal")):
+            s = e[src]
+            occ = s.get("bin_occupancy", {})
+            print(f"{key:28}{tag:12}{s['auroc_midrank']:>8.4f}{s['selective_accuracy_auc']:>8.4f}"
+                  f"{s['random_routing_auc']:>8.4f}{s['gap_vs_random']:>+9.4f}{s['ece']:>8.4f}"
+                  f"{s['mi_bits']:>9.5f}{occ.get('n_occupied', 0):>5}"
+                  f"{occ.get('largest_bin_fraction', float('nan')):>7.2f}")
+    if missing:
+        print("\nMissing:")
+        for m in missing:
+            print(f"  {m}")
+    print(f"\nWrote: {out_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
