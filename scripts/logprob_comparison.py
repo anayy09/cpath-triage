@@ -45,11 +45,15 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.triage.router import random_routing_curve, risk_coverage_curve
+
 LP_ROOT = PROJECT_ROOT / "results" / "logprob_confidence"
 MODELS = ("medgemma-27b-it", "gemma-3-27b-it")
 SPLITS = ("val", "test")
 SOURCES = ("label_token_confidence", "verbalized_confidence_same_patches")
 N_BINS = 15
+N_BOOT = 1000
+SEED = 42
 
 
 def bin_occupancy(x: np.ndarray, n_bins: int = N_BINS) -> dict:
@@ -61,6 +65,46 @@ def bin_occupancy(x: np.ndarray, n_bins: int = N_BINS) -> dict:
         "n_bins": n_bins,
         "n_occupied": int((counts > 0).sum()),
         "largest_bin_fraction": round(float(counts.max() / len(x)), 4),
+    }
+
+
+
+def paired_bootstrap(
+    sig_a: np.ndarray,
+    sig_b: np.ndarray | None,
+    correct: np.ndarray,
+    n_boot: int = N_BOOT,
+    seed: int = SEED,
+) -> dict:
+    """
+    Interval for a selective-accuracy AUC difference, patches held paired.
+
+    With sig_b given, the estimand is AUC(A) - AUC(B) on identical patches, which
+    is what the label-token against verbalized comparison needs. With sig_b None
+    the estimand is AUC(A) minus the random-routing reference on the same
+    resample, which is the gap-against-random each signal is quoted with.
+
+    Ties are resolved by the closed-form expectation inside every resample, so the
+    interval and the point estimate are computing the same quantity. That
+    correspondence is the defect revision item C-01 was about.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(correct)
+    diffs = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        c = correct[idx]
+        a = risk_coverage_curve(sig_a[idx], c, tie_break="expected")["auc"]
+        b = (risk_coverage_curve(sig_b[idx], c, tie_break="expected")["auc"]
+             if sig_b is not None else random_routing_curve(c, seed=seed)["auc"])
+        diffs[i] = a - b
+    lo, hi = np.percentile(diffs, [2.5, 97.5])
+    return {
+        "mean_diff": round(float(diffs.mean()), 4),
+        "ci_2.5": round(float(lo), 4),
+        "ci_97.5": round(float(hi), 4),
+        "excludes_zero": bool(lo > 0 or hi < 0),
+        "n_boot": n_boot,
     }
 
 
@@ -118,6 +162,18 @@ def main() -> int:
                 "ece": round(lt["ece"] - vb["ece"], 4),
                 "note": "Positive AUROC and AAUC favour the label-token signal.",
             }
+
+            # Every gap quoted from this table needs an interval, and the two
+            # signals live on the same patches, so the comparison is paired.
+            if ppath.exists():
+                correct = usable["correct"].to_numpy(bool)
+                lt_sig = usable["logprob_conf"].to_numpy(float)
+                vb_sig = usable["verbalized_conf"].to_numpy(float)
+                entry["bootstrap"] = {
+                    "label_token_minus_random": paired_bootstrap(lt_sig, None, correct),
+                    "verbalized_minus_random": paired_bootstrap(vb_sig, None, correct),
+                    "label_token_minus_verbalized": paired_bootstrap(lt_sig, vb_sig, correct),
+                }
             rows[key] = entry
 
     if not rows:
@@ -152,6 +208,17 @@ def main() -> int:
                   f"{s['random_routing_auc']:>8.4f}{s['gap_vs_random']:>+9.4f}{s['ece']:>8.4f}"
                   f"{s['mi_bits']:>9.5f}{occ.get('n_occupied', 0):>5}"
                   f"{occ.get('largest_bin_fraction', float('nan')):>7.2f}")
+    print()
+    for key, e in rows.items():
+        b = e.get("bootstrap")
+        if not b:
+            continue
+        print(key)
+        for name, c in b.items():
+            mark = "excludes 0" if c["excludes_zero"] else "includes 0"
+            print(f"   {name:34} {c['mean_diff']:+.4f} "
+                  f"[{c['ci_2.5']:+.4f}, {c['ci_97.5']:+.4f}]  {mark}")
+
     if missing:
         print("\nMissing:")
         for m in missing:
