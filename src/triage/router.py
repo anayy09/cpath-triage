@@ -188,6 +188,11 @@ def risk_coverage_curve(
             n_auto_confirmed:     list of int
             auc:                  float, area under the curve (trapezoid)
             auc_sd:               float, sd of the AUC across tie orders
+            auc_min, auc_max:     float, the smallest and largest AUC observed
+                                  across the sampled tie orders. Their difference
+                                  is how far two legitimate orderings of the same
+                                  predictions can land apart, measured rather
+                                  than argued. NaN unless tie_break="random".
             auc_expected:         float, exact expectation over random tie orders
             auc_row_order:        float, the pre-fix value, for comparison
             tie_fraction:         float, probability two patches tie
@@ -211,6 +216,7 @@ def risk_coverage_curve(
     auc_expected = _auc_from_curve(expected_acc)
     auc_row_order = _auc_from_curve(_row_order_prefix_accuracy(conf, corr, sizes))
 
+    auc_min = auc_max = float("nan")
     if tie_break == "expected":
         acc_list, auc, auc_sd = expected_acc, auc_expected, 0.0
     elif tie_break == "row_order":
@@ -233,6 +239,7 @@ def risk_coverage_curve(
             acc_sum += np.array([0.0 if math.isnan(a) else a for a in acc_r])
         auc = float(aucs.mean())
         auc_sd = float(aucs.std(ddof=1)) if n_repeats > 1 else 0.0
+        auc_min, auc_max = float(aucs.min()), float(aucs.max())
         mean_acc = acc_sum / n_repeats
         acc_list = [
             float(m) if k > 0 else float("nan") for m, k in zip(mean_acc, sizes)
@@ -244,6 +251,8 @@ def risk_coverage_curve(
         "n_auto_confirmed": sizes,
         "auc": auc,
         "auc_sd": auc_sd,
+        "auc_min": auc_min,
+        "auc_max": auc_max,
         "auc_expected": auc_expected,
         "auc_row_order": auc_row_order,
         "tie_fraction": stats["tie_fraction"],

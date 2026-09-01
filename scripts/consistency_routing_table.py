@@ -193,6 +193,14 @@ def main() -> int:
         rows[name] = {
             "auc": round(float(curve["auc"]), 4),
             "auc_sd_over_tie_orders": round(float(curve["auc_sd"]), 4),
+            # The observed spread across sampled tie orders, so the claim that
+            # two legitimate orderings of the same predictions land far apart is
+            # a measurement rather than an assertion.
+            "auc_min_over_tie_orders": round(float(curve["auc_min"]), 4),
+            "auc_max_over_tie_orders": round(float(curve["auc_max"]), 4),
+            "auc_range_over_tie_orders": round(
+                float(curve["auc_max"] - curve["auc_min"]), 4
+            ),
             "auc_expected_closed_form": round(float(curve["auc_expected"]), 4),
             "auc_row_order_superseded": round(float(curve["auc_row_order"]), 4),
             "tie_fraction": round(float(curve["tie_fraction"]), 4),
