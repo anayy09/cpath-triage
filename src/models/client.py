@@ -17,17 +17,16 @@ Usage:
     print(result.prediction, result.confidence)
 """
 
-import os
-import re
 import base64
 import logging
+import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
-from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -56,7 +55,7 @@ class SlideResult:
     confidence: float             # slide-level confidence (aggregated)
     tile_responses: list[Response] = field(default_factory=list)
     n_tiles_analyzed: int = 0
-    error: Optional[str] = None   # set if inference failed for this slide
+    error: str | None = None   # set if inference failed for this slide
 
 
 class Client:
@@ -105,8 +104,8 @@ class Client:
         tile_paths: list[str | Path],
         clinical_context: str,
         task: str,
-        prompt_text: Optional[str] = None,
-        model: Optional[str] = None,
+        prompt_text: str | None = None,
+        model: str | None = None,
         max_tokens: int = 512,
     ) -> Response:
         """
@@ -217,8 +216,8 @@ class Client:
     def probe_logprobs(
         self,
         prompt_text: str,
-        image_path: Optional[str | Path] = None,
-        model: Optional[str] = None,
+        image_path: str | Path | None = None,
+        model: str | None = None,
         top_logprobs: int = 5,
         max_tokens: int = 16,
     ) -> dict:
@@ -473,6 +472,7 @@ def _selftest() -> int:
     Run with: python -m src.models.client --selftest
     """
     import io
+
     from PIL import Image
 
     logging.basicConfig(level=logging.INFO)

@@ -25,13 +25,16 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import random
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-DATA_ROOT = Path("data/raw")
+# The npz files are large (12.6 GB at 224 px) and are normally kept outside the
+# repository, so the location is overridable rather than hardcoded.
+DATA_ROOT = Path(os.environ.get("PATHMNIST_DATA_ROOT", "data/raw"))
 NPZ_PATH = DATA_ROOT / "pathmnist_224.npz"
 
 # PathMNIST label index to canonical name (MedMNIST v2, Kather et al. classes)

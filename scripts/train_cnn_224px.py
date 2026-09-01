@@ -26,6 +26,9 @@ Usage:
 
     # Fallback: 20k stratified subset (fast, lower RAM)
     python scripts/train_cnn_224px.py --subset 20000
+
+    # Additional seed, written to its own directory
+    python scripts/train_cnn_224px.py --seed 43 --force-mmap         --out-dir results/cnn/resnet18_224px_seed43
 """
 
 from __future__ import annotations
@@ -33,20 +36,22 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import random
 import sys
 import time
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import psutil
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
 from sklearn.metrics import accuracy_score, f1_score
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -58,7 +63,9 @@ from src.data.pathmnist import (
     load_train_mmap,
 )
 
-NPZ_64_PATH = PROJECT_ROOT / "data" / "raw" / "pathmnist_64.npz"
+NPZ_64_PATH = Path(
+    os.environ.get("PATHMNIST_DATA_ROOT", PROJECT_ROOT / "data" / "raw")
+) / "pathmnist_64.npz"
 
 ALL_LABELS = [LABEL_NAMES[i] for i in range(len(LABEL_NAMES))]
 
@@ -311,6 +318,11 @@ def main() -> int:
         "--estimate-only", action="store_true",
         help="Print RAM usage estimate and exit without training.",
     )
+    parser.add_argument(
+        "--out-dir", type=str, default=None,
+        help="Output directory. Defaults to results/cnn/resnet18_224px. Set this when "
+             "training additional seeds so the seed-42 artifacts are not overwritten.",
+    )
     args = parser.parse_args()
 
     _set_seed(args.seed)
@@ -337,8 +349,13 @@ def main() -> int:
     else:
         logger.warning("CUDA not available -- training on CPU will be very slow.")
 
-    out_dir = PROJECT_ROOT / "results" / "cnn" / "resnet18_224px"
+    out_dir = (
+        Path(args.out_dir)
+        if args.out_dir
+        else PROJECT_ROOT / "results" / "cnn" / "resnet18_224px"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Output directory: %s", out_dir)
 
     # ── Load train data (auto-fallback) ──
     # The 224px train split decompresses to ~13.5 GB. Effective mmap requires this

@@ -97,7 +97,7 @@ def summarize(conf: np.ndarray, correct: np.ndarray) -> dict:
     # AUROC is undefined if only one correctness class is present.
     auroc = float(roc_auc_score(y, conf)) if 0 < y.sum() < len(y) else float("nan")
     return {
-        "n": int(len(correct)),
+        "n": len(correct),
         "accuracy": round(float(correct.mean()), 4),
         "conf_correct_auroc": round(auroc, 4),
         "mi_bits": round(mi, 5),

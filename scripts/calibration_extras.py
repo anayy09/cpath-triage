@@ -32,7 +32,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.eval.calibration import ece_score, adaptive_ece_score, brier_binary
+from src.eval.calibration import adaptive_ece_score, brier_binary, ece_score
 
 SEED = 42
 N_CLASSES = 9
@@ -40,7 +40,7 @@ N_CLASSES = 9
 
 def _metrics(conf: np.ndarray, correct: np.ndarray) -> dict:
     return {
-        "n": int(len(correct)),
+        "n": len(correct),
         "ece_equal_width": round(float(ece_score(conf, correct)), 4),
         "ece_adaptive": round(float(adaptive_ece_score(conf, correct)), 4),
         "brier": round(float(brier_binary(conf, correct)), 4),

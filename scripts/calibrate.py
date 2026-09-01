@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,11 +37,13 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.eval.calibration import (
-    brier_binary, brier_multiclass,
-    reliability_diagram_data, TemperatureScaler,
-)
 from src.data.pathmnist import LABEL_NAMES
+from src.eval.calibration import (
+    TemperatureScaler,
+    brier_binary,
+    brier_multiclass,
+    reliability_diagram_data,
+)
 
 N_CLASSES = 9
 ALL_LABELS = [LABEL_NAMES[i] for i in range(N_CLASSES)]
@@ -203,7 +206,7 @@ def calibrate_vlm(
         "calibration_type": "scalar_temperature",
         "T": round(T, 4),
         "n_cal": int(cal_n),
-        "n_eval": int(len(ev_df)),
+        "n_eval": len(ev_df),
         "ece_before": round(before["ece"], 4),
         "ece_after":  round(after["ece"],  4),
         "mce_before": round(before["mce"], 4),
@@ -224,7 +227,7 @@ def calibrate_vlm(
         test_ece_cal = reliability_diagram_data(test_conf_cal, test_corr)["ece"]
 
         params["transfer"] = {
-            "n_test": int(len(test_df)),
+            "n_test": len(test_df),
             "val_ece_cal": round(after["ece"], 4),
             "test_ece_raw": round(float(test_ece_raw), 4),
             "test_ece_cal": round(float(test_ece_cal), 4),
@@ -311,7 +314,7 @@ def calibrate_cnn(
         "calibration_type": "logit_temperature",
         "T": round(T, 4),
         "n_cal": int(cal_n),
-        "n_eval": int(len(ev_df)),
+        "n_eval": len(ev_df),
         "ece_before": round(before["ece"], 4),
         "ece_after":  round(after["ece"],  4),
         "mce_before": round(before["mce"], 4),
@@ -335,7 +338,7 @@ def calibrate_cnn(
         test_ece_cal = reliability_diagram_data(test_conf_cal, test_corr_cal)["ece"]
 
         params["transfer"] = {
-            "n_test": int(len(test_df)),
+            "n_test": len(test_df),
             "val_ece_cal": round(after["ece"], 4),
             "test_ece_raw": round(float(test_ece_raw), 4),
             "test_ece_cal": round(float(test_ece_cal), 4),

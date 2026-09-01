@@ -56,7 +56,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.pathmnist import LABEL_NAMES
-from src.triage.router import risk_coverage_curve, random_routing_curve, operating_point
+from src.triage.router import (
+    operating_point,
+    random_routing_curve,
+    risk_coverage_curve,
+)
 
 ALL_LABELS = [LABEL_NAMES[i] for i in range(len(LABEL_NAMES))]
 
@@ -102,8 +106,10 @@ def bootstrap_auc_diff(
     diffs = np.empty(n_boot)
     for i in range(n_boot):
         idx = rng.integers(0, n, size=n)
-        auc_a = risk_coverage_curve(conf_a[idx], correct_a[idx])["auc"]
-        auc_b = risk_coverage_curve(conf_b[idx], correct_b[idx])["auc"]
+        # See revision item C-01: ties are resolved by their exact expectation so
+        # the interval and the point estimate measure the same quantity.
+        auc_a = risk_coverage_curve(conf_a[idx], correct_a[idx], tie_break="expected")["auc"]
+        auc_b = risk_coverage_curve(conf_b[idx], correct_b[idx], tie_break="expected")["auc"]
         diffs[i] = auc_a - auc_b
     lo, hi = np.percentile(diffs, [2.5, 97.5])
     return {
@@ -172,7 +178,8 @@ def main() -> int:
 
     # Routing: raw confidence ranking (calibrated and raw give identical ranking
     # under monotone temperature scaling, per Methods 3.4)
-    sq_curve = risk_coverage_curve(sq_conf, sq_correct)
+    sq_curve = risk_coverage_curve(sq_conf, sq_correct, tie_break="random",
+                                   n_repeats=200, seed=args.seed)
     sq_random_curve = random_routing_curve(sq_correct, seed=args.seed)
     sq_op_15 = operating_point(sq_conf, sq_correct, 0.15)
     sq_op_rnd_15 = operating_point(np.full(len(sq_correct), 0.5), sq_correct, 0.15)
@@ -276,6 +283,10 @@ def main() -> int:
             "accuracy": round(float(sq_accuracy), 4),
             "macro_f1": round(float(sq_macro_f1), 4),
             "routing_auc": round(float(sq_curve["auc"]), 4),
+            "routing_auc_sd_over_tie_orders": round(float(sq_curve["auc_sd"]), 4),
+            "routing_auc_row_order_superseded": round(float(sq_curve["auc_row_order"]), 4),
+            "tie_fraction": round(float(sq_curve["tie_fraction"]), 4),
+            "n_distinct_confidences": int(sq_curve["n_distinct"]),
             "random_auc": round(float(sq_random_curve["auc"]), 4),
             "auto_confirm_acc_15pct": round(float(sq_op_15["auto_confirm_acc"]), 4),
             "random_auto_confirm_acc_15pct": round(float(sq_op_rnd_15["auto_confirm_acc"]), 4),

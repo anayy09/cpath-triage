@@ -50,6 +50,7 @@ from collections import Counter
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -61,15 +62,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.pathmnist import (
     LABEL_NAMES,
+    arr_to_pil,
     balanced_indices,
     load_labels,
     load_split_arrays,
-    arr_to_pil,
 )
+from src.eval.calibration import ece_score
 from src.models.client import Client
 from src.models.prompts import get_prompt
-from src.eval.calibration import ece_score
-from src.triage.router import risk_coverage_curve, random_routing_curve
+from src.triage.router import random_routing_curve, risk_coverage_curve
 
 logging.basicConfig(
     level=logging.INFO,

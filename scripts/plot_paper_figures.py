@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -42,7 +43,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.eval.calibration import TemperatureScaler
-from src.triage.router import risk_coverage_curve, random_routing_curve, operating_point
+from src.triage.router import operating_point, random_routing_curve, risk_coverage_curve
 
 ZS = PROJECT_ROOT / "results" / "zeroshot"
 CAL = PROJECT_ROOT / "results" / "calibration"
