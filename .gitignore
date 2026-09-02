@@ -35,3 +35,6 @@ Thumbs.db
 .claude/
 # Deposit staging
 build/
+
+# latexdiff staging (regenerable from paper/Dia-Med-VLM-v.1.0.zip)
+paper/diff/

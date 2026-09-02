@@ -36,8 +36,16 @@ keywords:
   - verbalized confidence
   - uncertainty quantification
   - colorectal
-# Set `version`, `date-released` and `doi` when the release is tagged and archived.
-# Leave them absent until then rather than writing an anticipated value.
+version: v2.0
+date-released: 2026-09-02
+doi: 10.5281/zenodo.22245990
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.22245989
+    description: Concept DOI, resolving to the most recent version of this record.
+  - type: doi
+    value: 10.5281/zenodo.22245990
+    description: Version DOI for v2.0, the release described in the manuscript.
 preferred-citation:
   type: article
   title: "Diagnosing Verbalized Confidence in a Medical Vision-Language Model for Selective Prediction on Colorectal Histopathology Patches: Calibration, Routing, and Robustness to Cohort Shift"
