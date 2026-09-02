@@ -154,6 +154,41 @@ def by_predicted_class(df: pd.DataFrame, min_n: int = 50) -> dict:
     }
 
 
+def manuscript_3dp(df: pd.DataFrame) -> dict:
+    """
+    The three-decimal values the manuscript table prints, rounded once.
+
+    This exists because rounding the four-decimal figures in this file a second
+    time is wrong whenever the fourth decimal is a 5, and it silently produced
+    four incorrect table cells before it was caught: 0.564482 became 0.565 by way
+    of 0.5645, and likewise for three others. Recomputing from full precision and
+    rounding once removes the possibility.
+    """
+    correct = df["correct"].to_numpy(bool)
+    out: dict = {}
+    for tag, col in (("label_token_confidence", "logprob_conf"),
+                     ("verbalized_confidence_same_patches", "verbalized_conf")):
+        x = df[col].to_numpy(float)
+        out[tag] = {
+            "auroc": round(auroc_midrank(x, correct), 3),
+            "selective_accuracy_auc": round(
+                float(risk_coverage_curve(x, correct, tie_break="expected")["auc"]), 3),
+            "ece": round(ece_equal_width(x, correct), 3),
+        }
+    return out
+
+
+def ece_equal_width(conf: np.ndarray, correct: np.ndarray, n_bins: int = N_BINS) -> float:
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    bins = np.clip(np.digitize(conf, edges[1:-1]), 0, n_bins - 1)
+    total = 0.0
+    for b in range(n_bins):
+        m = bins == b
+        if m.sum():
+            total += m.sum() * abs(conf[m].mean() - correct[m].mean())
+    return float(total / len(conf))
+
+
 def main() -> int:
     rows: dict[str, dict] = {}
     missing: list[str] = []
@@ -216,6 +251,7 @@ def main() -> int:
                 lt_sig = usable["logprob_conf"].to_numpy(float)
                 vb_sig = usable["verbalized_conf"].to_numpy(float)
                 entry["by_predicted_class"] = by_predicted_class(usable)
+                entry["manuscript_3dp"] = manuscript_3dp(usable)
                 entry["bootstrap"] = {
                     "label_token_minus_random": paired_bootstrap(lt_sig, None, correct),
                     "verbalized_minus_random": paired_bootstrap(vb_sig, None, correct),
@@ -255,6 +291,16 @@ def main() -> int:
                   f"{s['random_routing_auc']:>8.4f}{s['gap_vs_random']:>+9.4f}{s['ece']:>8.4f}"
                   f"{s['mi_bits']:>9.5f}{occ.get('n_occupied', 0):>5}"
                   f"{occ.get('largest_bin_fraction', float('nan')):>7.2f}")
+    print("\nManuscript table values, rounded once from full precision:")
+    for key, e in rows.items():
+        m3 = e.get("manuscript_3dp")
+        if not m3:
+            continue
+        for src_name, v in m3.items():
+            tag = "label-tok" if src_name.startswith("label") else "verbal"
+            print(f"  {key:28}{tag:12}AUROC={v['auroc']:.3f}  "
+                  f"AAUC={v['selective_accuracy_auc']:.3f}  ECE={v['ece']:.3f}")
+
     print()
     for key, e in rows.items():
         b = e.get("bootstrap")
