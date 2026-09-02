@@ -4,8 +4,9 @@ scripts/cluster_sensitivity.py
 Design-effect sensitivity for every headline interval (revision item C-04).
 
 Reviewer 1 is right that all our intervals treat patches as independent when
-validation patches nest within 86 slides and external-test patches within 50
-patients. We cannot comply with the requested cluster bootstrap: MedMNIST v2
+validation patches nest within 86 slides and external-test patches within 25
+slides drawn from 50 patients. We cannot comply with the requested cluster
+bootstrap: MedMNIST v2
 publishes no index from PathMNIST array position back to a source slide, and
 scripts/verify_partitions.py confirms the npz archives store nothing but images
 and labels. Rather than drop the concern, this quantifies it.
@@ -48,9 +49,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Cluster counts from Kather et al. NCT-CRC-HE-100K is assembled from 86 tissue
-# slides; CRC-VAL-HE-7K from 50 patients. Neither number appears in the submitted
-# Methods, which is itself part of what Reviewer 1 asked us to fix.
+# slides. CRC-VAL-HE-7K is 7,180 patches from 50 patients, but Kather et al. 2019
+# state the patches were cut from 25 H&E slides of DACHS-study tissue, so slides
+# and patients are not the same unit here and the two counts differ by a factor
+# of two. The design effect uses the slide, because the correlation it models is
+# staining, scanner and batch, and those are properties of the slide rather than
+# of the patient. Using 50 would halve the assumed cluster size and understate
+# the widening. Neither number appears in the submitted Methods, which is itself
+# part of what Reviewer 1 asked us to fix.
 N_SLIDES_TRAIN_VAL = 86
+N_SLIDES_TEST = 25
 N_PATIENTS_TEST = 50
 N_VAL_PATCHES = 10_004
 N_TEST_PATCHES = 7_180
@@ -132,19 +140,19 @@ def main() -> int:
     )
 
     m_val_full = N_VAL_PATCHES / N_SLIDES_TRAIN_VAL
-    m_test_full = N_TEST_PATCHES / N_PATIENTS_TEST
+    m_test_full = N_TEST_PATCHES / N_SLIDES_TEST
     m_subset_val = N_SUBSET_PATCHES / N_SLIDES_TRAIN_VAL
-    m_subset_test = N_SUBSET_PATCHES / N_PATIENTS_TEST
+    m_subset_test = N_SUBSET_PATCHES / N_SLIDES_TEST
 
     findings: dict[str, dict] = {}
 
     # Full-scale routing gaps (Table 4).
     for key, label, m, nc in (
         ("medgemma-27b-it|val", "MedGemma routing gap vs random (val)", m_val_full, N_SLIDES_TRAIN_VAL),
-        ("medgemma-27b-it|test", "MedGemma routing gap vs random (test)", m_test_full, N_PATIENTS_TEST),
+        ("medgemma-27b-it|test", "MedGemma routing gap vs random (test)", m_test_full, N_SLIDES_TEST),
         ("gemma-3-27b-it|val", "Gemma-3 routing gap vs random (val)", m_val_full, N_SLIDES_TRAIN_VAL),
-        ("gemma-3-27b-it|test", "Gemma-3 routing gap vs random (test)", m_test_full, N_PATIENTS_TEST),
-        ("resnet18_64px|test", "CNN-64 routing gap vs random (test)", m_test_full, N_PATIENTS_TEST),
+        ("gemma-3-27b-it|test", "Gemma-3 routing gap vs random (test)", m_test_full, N_SLIDES_TEST),
+        ("resnet18_64px|test", "CNN-64 routing gap vs random (test)", m_test_full, N_SLIDES_TEST),
     ):
         r = routing[key]
         b = r["gap_bootstrap"]
@@ -153,7 +161,7 @@ def main() -> int:
     # Consistency contrasts (Tables 8 and 9), on the 1,800-patch subsets.
     for src, split, m, nc in (
         (cons_val, "val", m_subset_val, N_SLIDES_TRAIN_VAL),
-        (cons_test, "test", m_subset_test, N_PATIENTS_TEST),
+        (cons_test, "test", m_subset_test, N_SLIDES_TEST),
     ):
         for contrast, pretty in (
             ("consistency_minus_mean_textual_conf", "Consistency minus mean-of-5 confidence"),
@@ -173,7 +181,13 @@ def main() -> int:
             "val_source": "NCT-CRC-HE-100K",
             "n_slides_train_val": N_SLIDES_TRAIN_VAL,
             "test_source": "CRC-VAL-HE-7K",
+            "n_slides_test": N_SLIDES_TEST,
             "n_patients_test": N_PATIENTS_TEST,
+            "test_cluster_unit": (
+                "slide. Kather et al. 2019 cut the 7,180 patches from 25 H&E slides of "
+                "DACHS-study tissue banked at NCT Heidelberg; the Zenodo record gives the "
+                "50-patient count. Staining, scanner and batch attach to the slide."
+            ),
             "mean_cluster_size_val_full": round(m_val_full, 1),
             "mean_cluster_size_test_full": round(m_test_full, 1),
             "mean_cluster_size_val_subset": round(m_subset_val, 1),
@@ -196,7 +210,7 @@ def main() -> int:
     out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
     print("=== Design-effect sensitivity ===")
-    print(f"clusters: {N_SLIDES_TRAIN_VAL} slides (val), {N_PATIENTS_TEST} patients (test)")
+    print(f"clusters: {N_SLIDES_TRAIN_VAL} slides (val), {N_SLIDES_TEST} slides (test; 50 patients)")
     print(f"{'finding':<52}{'point':>9}{'rho*':>9}  survives rho =")
     for label, f in findings.items():
         rs = f["break_even_rho"]

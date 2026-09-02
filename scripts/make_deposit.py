@@ -71,6 +71,23 @@ RESULTS_SUFFIXES = {".json", ".parquet", ".png", ".md", ".txt"}
 CHECKPOINT_SUFFIX = ".pt"
 SKIP_DIR_NAMES = {"__pycache__", ".ipynb_checkpoints"}
 
+# The deposit's stated scope is the code and artifacts behind the manuscript's
+# tables and figures, and the README maps each script to what it produces. These
+# four produce nothing in the paper, so carrying them invites a reader to look
+# for an output that is not there. Two build and publish the deposit itself, and
+# two belong to the report-synthesis stage that Figure 1 greys out and the
+# caption says is not evaluated. All four stay in the GitHub repository.
+EXCLUDED_SCRIPTS = {
+    "make_deposit.py",
+    "zenodo_new_version.py",
+    "generate_report.py",
+    "error_analysis.py",
+}
+
+# Outputs of the excluded stage-7 scripts. The montage alone is 2.3 MB and no
+# table, figure or claim in the manuscript refers to it.
+EXCLUDED_RESULT_DIRS = {"stage7"}
+
 
 def _iter_code_files() -> list[Path]:
     out: list[Path] = []
@@ -83,6 +100,7 @@ def _iter_code_files() -> list[Path]:
                 p.is_file()
                 and p.suffix not in (".pyc", ".pyo")
                 and not any(part in SKIP_DIR_NAMES for part in p.parts)
+                and not (d == "scripts" and p.name in EXCLUDED_SCRIPTS)
             ):
                 out.append(p)
     for name in ROOT_FILES:
@@ -115,6 +133,9 @@ def _iter_result_files(include_checkpoints: bool) -> tuple[list[Path], list[Path
         wanted.add(CHECKPOINT_SUFFIX)
     for p in sorted(root.rglob("*")):
         if not p.is_file():
+            continue
+        if p.relative_to(root).parts[0] in EXCLUDED_RESULT_DIRS:
+            skipped.append(p)
             continue
         if any(parent in skipped_dirs for parent in p.parents):
             skipped.append(p)

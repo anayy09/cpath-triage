@@ -36,16 +36,19 @@ keywords:
   - verbalized confidence
   - uncertainty quantification
   - colorectal
-version: v2.1
+version: v2.2
 date-released: 2026-09-02
-doi: 10.5281/zenodo.22246362
+doi: 10.5281/zenodo.22249450
 identifiers:
   - type: doi
     value: 10.5281/zenodo.22245989
     description: Concept DOI, resolving to the most recent version of this record.
   - type: doi
+    value: 10.5281/zenodo.22249450
+    description: Version DOI for v2.2, the release described in the manuscript. Carries the corrected artifacts and drops the four scripts that produce no table or figure.
+  - type: doi
     value: 10.5281/zenodo.22246362
-    description: Version DOI for v2.1, the release described in the manuscript. Adds the prediction artifacts.
+    description: Version DOI for v2.1, superseded. Its routing artifacts predate the correction to the against-random comparator.
   - type: doi
     value: 10.5281/zenodo.22245990
     description: Version DOI for v2.0, which contained the code only.

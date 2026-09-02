@@ -96,6 +96,45 @@ def bootstrap_diff(
     }
 
 
+def bootstrap_diff_vs_random(
+    sig: np.ndarray,
+    corr: np.ndarray,
+    n_boot: int,
+    seed: int,
+) -> dict:
+    """
+    Paired bootstrap CI for AUC(signal) - AUC(random ordering of the same signal).
+
+    The reference is redrawn inside every resample. Holding one permutation fixed
+    across all resamples, which is what this function used to do, measures the
+    signal against whatever that single draw happened to score rather than against
+    the expectation, and on a heavily tied signal a single draw sits up to 0.02
+    away from it. That put the reported gap outside the difference of the two AUCs
+    printed in the same table, which is the defect Reviewer 1 raised about the
+    routing table and which has to be avoided here for the same reason. Permuting
+    the signal rather than the outcome preserves its tie structure, so the
+    reference is a random ordering of an identically coarse signal.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(corr)
+    diffs = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        s, c = sig[idx], corr[idx]
+        diffs[i] = (
+            risk_coverage_curve(s, c, tie_break="expected")["auc"]
+            - risk_coverage_curve(rng.permutation(s), c, tie_break="expected")["auc"]
+        )
+    lo, hi = np.percentile(diffs, [2.5, 97.5])
+    return {
+        "mean_diff": round(float(diffs.mean()), 4),
+        "ci_2.5": round(float(lo), 4),
+        "ci_97.5": round(float(hi), 4),
+        "excludes_zero": bool(lo > 0 or hi < 0),
+        "n_boot": n_boot,
+    }
+
+
 def plot_routing_curves(
     consistency: tuple[np.ndarray, np.ndarray],
     mean_conf: tuple[np.ndarray, np.ndarray],
@@ -226,15 +265,11 @@ def main() -> int:
             signals["entropy_over_k"][0], modal_correct,
             args.n_boot, args.seed,
         ),
-        "mean_textual_conf_minus_random": bootstrap_diff(
-            signals["mean_textual_conf"][0], modal_correct,
-            np.random.default_rng(args.seed).permutation(signals["mean_textual_conf"][0]),
-            modal_correct, args.n_boot, args.seed,
+        "mean_textual_conf_minus_random": bootstrap_diff_vs_random(
+            signals["mean_textual_conf"][0], modal_correct, args.n_boot, args.seed,
         ),
-        "mean_textual_conf_flip_minus_random": bootstrap_diff(
-            signals["mean_textual_conf_flip"][0], modal_correct,
-            np.random.default_rng(args.seed).permutation(signals["mean_textual_conf"][0]),
-            modal_correct, args.n_boot, args.seed,
+        "mean_textual_conf_flip_minus_random": bootstrap_diff_vs_random(
+            signals["mean_textual_conf_flip"][0], modal_correct, args.n_boot, args.seed,
         ),
     }
 
