@@ -106,6 +106,9 @@ def main() -> int:
     ap.add_argument("--keep-existing-files", action="store_true",
                     help="Keep the inherited code-only zip. Off by default, since the new "
                          "archive already contains the code.")
+    ap.add_argument("--draft-id", default=None,
+                    help="Operate on an existing unsubmitted draft instead of opening a new "
+                         "version. Use this to resume after an interrupted run.")
     ap.add_argument("--publish", action="store_true",
                     help="Publish. Irreversible: a published version cannot be deleted.")
     args = ap.parse_args()
@@ -129,26 +132,50 @@ def main() -> int:
         size = args.zip.stat().st_size
         print(f"\nWill upload {args.zip.name} as {upload_name} ({size:,} bytes)")
 
-        new = show(c.post(f"{BASE}/deposit/depositions/{RECORD_ID}/actions/newversion"),
-                   "Creating the new version")
-        draft_url = new["links"]["latest_draft"]
-        draft = show(c.get(draft_url), "Fetching the draft")
+        # An unsubmitted draft may already exist from an earlier run, and Zenodo
+        # refuses to open a second one ("Please remove all files first"). The
+        # published record's own `latest_draft` link is no help: on a published
+        # version it points back at that version, not at the newer draft. So the
+        # draft id is taken explicitly, which is also the auditable choice for a
+        # step that ends in an irreversible publish.
+        draft = None
+        if args.draft_id:
+            probe = c.get(f"{BASE}/deposit/depositions/{args.draft_id}")
+            if probe.status_code >= 400:
+                raise SystemExit(f"Draft {args.draft_id} not readable: "
+                                 f"{probe.status_code} {probe.text[:300]}")
+            draft = probe.json()
+            if draft.get("submitted"):
+                raise SystemExit(f"Deposition {args.draft_id} is already published; refusing.")
+            print(f"\nUsing existing draft {draft['id']} "
+                  f"(version {draft['metadata'].get('version')})")
+
+        if draft is None:
+            new = show(c.post(f"{BASE}/deposit/depositions/{RECORD_ID}/actions/newversion"),
+                       "Creating the new version")
+            draft = show(c.get(new["links"]["latest_draft"]), "Fetching the draft")
+            print(f"Draft created: {draft['id']}")
         draft_id = draft["id"]
-        print(f"Draft created: {draft_id}")
 
-        if not args.keep_existing_files:
-            for f in draft.get("files", []):
-                fid = f.get("id")
-                r = c.delete(f"{BASE}/deposit/depositions/{draft_id}/files/{fid}")
-                if r.status_code >= 400:
-                    raise SystemExit(f"Removing inherited file failed: {r.status_code} {r.text[:400]}")
-                print(f"Removed inherited file: {f.get('filename')}")
-
-        bucket = draft["links"]["bucket"]
-        print(f"Uploading {size:,} bytes ...")
-        with args.zip.open("rb") as fh:
-            show(c.put(f"{bucket}/{upload_name}", content=fh), "Uploading the archive")
-        print("Upload complete.")
+        # Upload only when the draft does not already carry this exact archive.
+        existing = {f.get("filename"): f for f in draft.get("files", [])}
+        already = existing.get(upload_name)
+        if already and already.get("filesize") == size:
+            print(f"Draft already holds {upload_name} at {size:,} bytes; skipping upload.")
+        else:
+            if not args.keep_existing_files:
+                for f in draft.get("files", []):
+                    r = c.delete(f"{BASE}/deposit/depositions/{draft_id}/files/{f['id']}")
+                    if r.status_code >= 400:
+                        raise SystemExit(
+                            f"Removing inherited file failed: {r.status_code} {r.text[:400]}")
+                    print(f"Removed file: {f.get('filename')}")
+            print(f"Uploading {size:,} bytes ...")
+            with args.zip.open("rb") as fh:
+                show(c.put(f"{draft['links']['bucket']}/{upload_name}", content=fh),
+                     "Uploading the archive")
+            print("Upload complete.")
+            draft = show(c.get(f"{BASE}/deposit/depositions/{draft_id}"), "Re-reading the draft")
 
         meta = dict(draft["metadata"])
         meta["version"] = args.version
