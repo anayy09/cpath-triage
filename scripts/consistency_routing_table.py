@@ -229,8 +229,16 @@ def main() -> int:
             sig, corr, tie_break="random", n_repeats=N_TIE_REPEATS, seed=args.seed
         )
         ref = random_auc_v0 if name == "single_query_conf" else random_auc
+        # The published point estimate is the closed-form expectation over random
+        # tie orders, which is what every bootstrap in this repository uses inside
+        # each resample and what Tables 6 and 13 already print. The Monte Carlo
+        # path is kept for the spread it measures, not for the estimate: averaging
+        # 200 draws lands up to 0.0013 from the exact value, and taking the point
+        # estimate from one estimator and its interval from another is the defect
+        # revision item C-01 was about.
+        auc = float(curve["auc_expected"])
         rows[name] = {
-            "auc": round(float(curve["auc"]), 4),
+            "auc": round(auc, 4),
             "auc_sd_over_tie_orders": round(float(curve["auc_sd"]), 4),
             # The observed spread across sampled tie orders, so the claim that
             # two legitimate orderings of the same predictions land far apart is
@@ -240,12 +248,12 @@ def main() -> int:
             "auc_range_over_tie_orders": round(
                 float(curve["auc_max"] - curve["auc_min"]), 4
             ),
-            "auc_expected_closed_form": round(float(curve["auc_expected"]), 4),
+            "auc_monte_carlo_mean": round(float(curve["auc"]), 4),
             "auc_row_order_superseded": round(float(curve["auc_row_order"]), 4),
             "tie_fraction": round(float(curve["tie_fraction"]), 4),
             "n_distinct": int(curve["n_distinct"]),
             "random_reference": round(float(ref), 4),
-            "gap_vs_random": round(float(curve["auc"] - ref), 4),
+            "gap_vs_random": round(float(auc - ref), 4),
             "routes_outcome": "single_query" if name == "single_query_conf" else "modal_vote",
         }
 
@@ -312,12 +320,16 @@ def main() -> int:
         "n_patches": len(df),
         "seed": args.seed,
         "tie_handling": {
-            "tie_break": "random",
+            "tie_break": "expected",
             "n_repeats": N_TIE_REPEATS,
             "note": (
-                "Point estimates average the AUC over random tie orders; "
-                "auc_row_order_superseded is what the pre-revision code reported, "
-                "which ranked tied values by row position."
+                "auc is the closed-form expectation over uniformly random tie "
+                "orders, the same estimator the bootstrap uses inside each "
+                "resample. auc_monte_carlo_mean averages n_repeats sampled tie "
+                "orders and is reported only because the sd, min and max beside "
+                "it measure the spread ordering alone induces. "
+                "auc_row_order_superseded is what the pre-revision code "
+                "reported, which ranked tied values by row position."
             ),
         },
         "random_routing_auc": {

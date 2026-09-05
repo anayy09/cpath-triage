@@ -199,12 +199,16 @@ def main() -> int:
         c = risk_coverage_curve(
             sig, correct, tie_break="random", n_repeats=N_TIE_REPEATS, seed=args.seed
         )
+        # Closed-form expectation for the estimate, Monte Carlo only for the
+        # spread. See the note in scripts/consistency_routing_table.py.
+        auc = float(c["auc_expected"])
         curves[name] = {
-            "auc": round(float(c["auc"]), 4),
+            "auc": round(auc, 4),
             "auc_sd_over_tie_orders": round(float(c["auc_sd"]), 4),
+            "auc_monte_carlo_mean": round(float(c["auc"]), 4),
             "tie_fraction": round(float(c["tie_fraction"]), 4),
             "n_distinct": int(c["n_distinct"]),
-            "gap_vs_random": round(float(c["auc"] - random_auc), 4),
+            "gap_vs_random": round(float(auc - random_auc), 4),
         }
 
     contrasts = {
@@ -219,6 +223,19 @@ def main() -> int:
             args.seed,
         ),
     }
+    # The manuscript prints the plug-in difference of the two tabulated AUCs and
+    # takes only the interval from the bootstrap, as everywhere else.
+    for cname, (a, b) in {
+        "weighted_minus_consistency": ("confusability_weighted", "consistency_score"),
+        "weighted_minus_random": ("confusability_weighted", None),
+    }.items():
+        point = curves[a]["auc"] - (curves[b]["auc"] if b else random_auc)
+        contrasts[cname]["gap_point"] = round(float(point), 4)
+        contrasts[cname]["point_inside_ci"] = bool(
+            contrasts[cname]["ci_2.5"]
+            <= contrasts[cname]["gap_point"]
+            <= contrasts[cname]["ci_97.5"]
+        )
 
     result = {
         "model": args.model,

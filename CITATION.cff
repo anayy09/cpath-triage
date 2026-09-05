@@ -36,16 +36,19 @@ keywords:
   - verbalized confidence
   - uncertainty quantification
   - colorectal
-version: v2.3
-date-released: 2026-09-02
-doi: 10.5281/zenodo.22250253
+version: v2.4
+date-released: 2026-09-05
+doi: 10.5281/zenodo.22319249
 identifiers:
   - type: doi
     value: 10.5281/zenodo.22245989
     description: Concept DOI, resolving to the most recent version of this record.
   - type: doi
+    value: 10.5281/zenodo.22319249
+    description: Version DOI for v2.4, the release described in the manuscript. Every selective-accuracy AUC point estimate now comes from the closed-form tie expectation, matching the intervals beside it.
+  - type: doi
     value: 10.5281/zenodo.22250253
-    description: Version DOI for v2.3, the release described in the manuscript. Carries the routing artifacts as corrected in the final pass.
+    description: Version DOI for v2.3, superseded. Its consistency and label-token tables mixed tie estimators and gap conventions.
   - type: doi
     value: 10.5281/zenodo.22249450
     description: Version DOI for v2.2, superseded. Its consistency contrasts predate the switch to plug-in point estimates.

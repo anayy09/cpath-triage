@@ -104,9 +104,10 @@ def main() -> int:
     consistency = df["consistency_score"].to_numpy(float)
     mean_conf = df["mean_textual_conf"].to_numpy(float)
 
-    # Point estimates average over random tie orders and report the spread that
-    # ordering induces. These signals are coarse (5 to 10 distinct values), so the
-    # spread is not negligible and belongs next to the number.
+    # Point estimates are the closed-form expectation over random tie orders,
+    # matching the bootstrap and the rest of the paper. The Monte Carlo path runs
+    # only for the spread it measures: these signals are coarse (5 to 10 distinct
+    # values), so the spread is not negligible and belongs next to the number.
     curves = {
         "entropy_over_k": risk_coverage_curve(
             entropy_signal, modal_correct, tie_break="random", n_repeats=N_TIE_REPEATS, seed=SEED
@@ -118,9 +119,9 @@ def main() -> int:
             mean_conf, modal_correct, tie_break="random", n_repeats=N_TIE_REPEATS, seed=SEED
         ),
     }
-    auc_entropy = curves["entropy_over_k"]["auc"]
-    auc_consistency = curves["consistency"]["auc"]
-    auc_meanconf = curves["mean_textual_conf"]["auc"]
+    auc_entropy = curves["entropy_over_k"]["auc_expected"]
+    auc_consistency = curves["consistency"]["auc_expected"]
+    auc_meanconf = curves["mean_textual_conf"]["auc_expected"]
     auc_random = random_routing_curve(modal_correct, seed=SEED)["auc"]
 
     boot_cons_vs_entropy = bootstrap_auc_diff(consistency, modal_correct, entropy_signal, modal_correct)
@@ -143,7 +144,7 @@ def main() -> int:
             "random": round(float(auc_random), 4),
         },
         "tie_handling": {
-            "tie_break": "random",
+            "tie_break": "expected",
             "n_repeats": N_TIE_REPEATS,
             "auc_sd_over_tie_orders": {
                 k: round(float(v["auc_sd"]), 4) for k, v in curves.items()
