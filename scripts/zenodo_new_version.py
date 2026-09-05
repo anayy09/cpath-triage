@@ -50,7 +50,7 @@ BASE = "https://zenodo.org/api"
 # Point at the newest published version in the lineage. Zenodo derives a new
 # version from whichever record this names, so leaving it on v2.0 would branch
 # from the code-only archive and drop the prediction artifacts again.
-RECORD_ID = "22246362"          # the published v2.1 version
+RECORD_ID = "22249450"          # the published v2.2 version
 CONCEPT_ID = "22245989"         # concept record, stable across versions
 DEFAULT_ZIP = PROJECT_ROOT / "build" / "zenodo_deposit.zip"
 TIMEOUT = httpx.Timeout(60.0, read=600.0, write=600.0)

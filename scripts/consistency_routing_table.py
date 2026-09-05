@@ -251,6 +251,16 @@ def main() -> int:
 
     # Contrasts the paper makes explicitly.
     cons_sig = signals["consistency_score"][0]
+    # Point estimates are the difference of the two tabulated AUCs, so a reader
+    # can reconcile any gap against the table it sits next to. The bootstrap
+    # supplies the interval only: its mean over resamples is a slightly
+    # different quantity and differs here by up to 0.002, which is enough to
+    # show up at the three decimals the manuscript prints.
+    def point(sig_name: str, ref_name: str | None) -> float:
+        a = rows[sig_name]["auc"]
+        b = rows[ref_name]["auc"] if ref_name else rows[sig_name]["random_reference"]
+        return round(float(a - b), 4)
+
     contrasts = {
         "consistency_minus_mean_textual_conf": bootstrap_diff(
             cons_sig, modal_correct,
@@ -272,6 +282,18 @@ def main() -> int:
             signals["mean_textual_conf_flip"][0], modal_correct, args.n_boot, args.seed,
         ),
     }
+
+    # Attach the plug-in point estimate to each interval.
+    for cname, (a, b) in {
+        "consistency_minus_mean_textual_conf": ("consistency_score", "mean_textual_conf"),
+        "consistency_minus_single_query_conf": ("consistency_score", "single_query_conf"),
+        "consistency_minus_entropy": ("consistency_score", "entropy_over_k"),
+        "mean_textual_conf_minus_random": ("mean_textual_conf", None),
+        "mean_textual_conf_flip_minus_random": ("mean_textual_conf_flip", None),
+    }.items():
+        contrasts[cname]["gap_point"] = point(a, b)
+        lo, hi = contrasts[cname]["ci_2.5"], contrasts[cname]["ci_97.5"]
+        contrasts[cname]["point_inside_ci"] = bool(lo <= contrasts[cname]["gap_point"] <= hi)
 
     # Surfaced because the paper's constructive claim is that consistency is the
     # usable signal, so how well it behaves as a probability is relevant

@@ -170,8 +170,12 @@ def main() -> int:
         ):
             c = src["contrasts"][contrast]
             label = f"{pretty} ({split})"
+            # gap_point is the difference of the two tabulated AUCs, which is what
+            # the manuscript prints; the bootstrap mean is a slightly different
+            # quantity and using it here would put a break-even value against a
+            # point estimate that appears nowhere in the paper.
             findings[label] = analyse(
-                label, c["mean_diff"], c["ci_2.5"], c["ci_97.5"], m, nc
+                label, c.get("gap_point", c["mean_diff"]), c["ci_2.5"], c["ci_97.5"], m, nc
             )
 
     out = {
