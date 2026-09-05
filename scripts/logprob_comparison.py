@@ -257,6 +257,17 @@ def main() -> int:
                     "verbalized_minus_random": paired_bootstrap(vb_sig, None, correct),
                     "label_token_minus_verbalized": paired_bootstrap(lt_sig, vb_sig, correct),
                 }
+                plug_in = {
+                    "label_token_minus_random": lt["gap_vs_random"],
+                    "verbalized_minus_random": vb["gap_vs_random"],
+                    "label_token_minus_verbalized":
+                        entry["label_token_minus_verbalized"]["selective_accuracy_auc"],
+                }
+                for cname, point in plug_in.items():
+                    c = entry["bootstrap"][cname]
+                    c["gap_point"] = round(float(point), 4)
+                    c["point_inside_ci"] = bool(
+                        c["ci_2.5"] <= c["gap_point"] <= c["ci_97.5"])
             rows[key] = entry
 
     if not rows:
