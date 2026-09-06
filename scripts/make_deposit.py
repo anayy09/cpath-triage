@@ -82,6 +82,9 @@ EXCLUDED_SCRIPTS = {
     "zenodo_new_version.py",
     "generate_report.py",
     "error_analysis.py",
+    # Reads paper/latex/main.tex, which the deposit does not carry by default,
+    # so shipping it would put a script in the archive that cannot run there.
+    "audit_manuscript_numbers.py",
 }
 
 # Outputs of the excluded stage-7 scripts. The montage alone is 2.3 MB and no

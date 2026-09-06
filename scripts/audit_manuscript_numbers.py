@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 tex = (ROOT / "paper" / "latex" / "main.tex").read_text(encoding="utf-8")
 letter = (ROOT / "paper" / "RESPONSE_LETTER_SR_R1.md").read_text(encoding="utf-8")
+supp = (ROOT / "paper" / "latex" / "supplementary.tex").read_text(encoding="utf-8")
 
 fails, checks = [], 0
 
@@ -170,8 +171,36 @@ for gone in (
 ):
     absent("stale", gone)
 
+# --- the three Supplementary tables and the pointers to them ----------------
+# Each was requested in review, so the main text has to say where it went and
+# the supplement has to actually contain it.
+for label in ("tab:cluster", "tab:logprob", "tab:seeds"):
+    absent("moved table still in main", r"\ref{" + label + "}")
+    present(f"{label} in supplement", "label{" + label + "}", supp, "supplementary.tex")
+for n in ("Table~S1", "Table~S2", "Table~S3"):
+    present(f"{n} pointer", n)
+present("SI declaration", "Supplementary information:")
+present("SI numbering", r"\renewcommand{\thetable}{S\arabic{table}}", supp, "supplementary.tex")
+
 present("letter endpoint", "api.ai.it.ufl.edu", letter, "letter")
-present("letter fourth pass", "A fourth pass, on three things", letter, "letter")
+present("letter audit section", "Further corrections from our own audit", letter, "letter")
+
+# The manuscript states the current state of the work. Revision history, reviewer
+# attributions and self-justification belong in the response letter, not in the paper.
+for phrase in (
+    "submitted version",
+    "earlier version",
+    "previous version",
+    "response to reviewers",
+    "reviewer",
+    "requested in review",
+    "we withdraw",
+    "was our error",
+    "we no longer",
+    "That objection",
+):
+    absent(f"narration in main.tex: {phrase}", phrase)
+    absent(f"narration in supplementary.tex: {phrase}", phrase, supp, "supplementary.tex")
 for gone in (
     "The other two we found while auditing",
     "Both columns order the models the same way",
