@@ -44,17 +44,17 @@ Two supporting analyses appear only in the prose: `scripts/confidence_informatio
 
 | Figure | Content | Script | Artifact |
 |---|---|---|---|
-| 1 | Selective-prediction setting | drawn by hand, no data | `paper/latex/figures/fig1_pipeline.png` |
-| 2 | ResNet-18 224 px training curve | `scripts/train_cnn_224px.py` (GPU) | `results/cnn/resnet18_224px/training_curve.png` |
-| 3 | MedGemma confusion matrix | `scripts/run_zeroshot.py` (API) | `results/zeroshot/medgemma-27b-it/V3_full/confusion_matrix.png` |
-| 4 | Gemma-3 confusion matrix | `scripts/run_zeroshot.py` (API) | `results/zeroshot/gemma-3-27b-it/V3_full/confusion_matrix.png` |
-| 5 | MedGemma reliability diagrams | `scripts/calibrate.py` | `results/calibration/medgemma-27b-it/V3_full/reliability_combined.png` |
-| 6 | Gemma-3 reliability diagrams | `scripts/calibrate.py` | `results/calibration/gemma-3-27b-it/V3_full/reliability_combined.png` |
+| 1 | Selective-prediction setting | image generation, no data (candidate kept as `scripts/figures/raw/fig1_gen_v3.png`) | `paper/latex/figures/fig1_pipeline_gen.png` |
+| 2 | ResNet-18 224 px training curve | `scripts/replot_saved_figures.py` (drawn first by `train_cnn_224px.py`) | `results/cnn/resnet18_224px/training_curve.png` |
+| 3 | MedGemma confusion matrix | `scripts/replot_saved_figures.py` (drawn first by `run_zeroshot.py`) | `results/zeroshot/medgemma-27b-it/V3_full/confusion_matrix.png` |
+| 4 | Gemma-3 confusion matrix | `scripts/replot_saved_figures.py` (drawn first by `run_zeroshot.py`) | `results/zeroshot/gemma-3-27b-it/V3_full/confusion_matrix.png` |
+| 5 | MedGemma reliability diagrams | `scripts/calibrate.py --full-scale` | `results/calibration/medgemma-27b-it/V3_full/reliability_combined.png` |
+| 6 | Gemma-3 reliability diagrams | `scripts/calibrate.py --full-scale --vlm-model gemma-3-27b-it` | `results/calibration/gemma-3-27b-it/V3_full/reliability_combined.png` |
 | 7 | Selective-accuracy routing curves | `scripts/plot_paper_figures.py` | `results/routing/risk_coverage_fullscale_comparison.png` |
 | 8 | Validation against test accuracy bars | `scripts/plot_paper_figures.py` | `results/stage6/cross_center_accuracy_bars.png` |
 | 9 | Consistency routing curves, 1,800 patches | `scripts/consistency_routing_table.py` | `results/consistency/medgemma-27b-it/V3/routing_curves_tie_expectation.png` |
 
-Each manuscript figure file is a byte-identical copy of its artifact.
+Each manuscript figure file is a byte-identical copy of its artifact. `replot_saved_figures.py` redraws Figures 2 to 4 from the saved predictions and training history with the same plotting functions the API and GPU runs used, so none of Figures 2 to 9 needs a billed call or a GPU.
 
 ### Order of execution
 
@@ -77,6 +77,9 @@ for s in val test; do
 done
 python scripts/cluster_sensitivity.py
 python scripts/plot_paper_figures.py
+python scripts/replot_saved_figures.py
+python scripts/calibrate.py --full-scale
+python scripts/calibrate.py --full-scale --vlm-model gemma-3-27b-it
 ```
 
 ## Quick start

@@ -178,6 +178,26 @@ def main() -> int:
                 label, c.get("gap_point", c["mean_diff"]), c["ci_2.5"], c["ci_97.5"], m, nc
             )
 
+    # Label-token comparison (Table S2), on its own subsamples: 2,001 validation
+    # patches (the held-out evaluation partition) and 2,000 external patches.
+    logprob = _load(
+        PROJECT_ROOT / "results" / "logprob_confidence" / "comparison.json"
+    )["runs"]
+    for key, split, n, nc in (
+        ("medgemma-27b-it|val", "val", logprob["medgemma-27b-it|val"]["n"], N_SLIDES_TRAIN_VAL),
+        ("medgemma-27b-it|test", "test", logprob["medgemma-27b-it|test"]["n"], N_SLIDES_TEST),
+    ):
+        boot = logprob[key]["bootstrap"]
+        for contrast, pretty in (
+            ("label_token_minus_random", "MedGemma label-token minus random"),
+            ("label_token_minus_verbalized", "MedGemma label-token minus verbalized"),
+        ):
+            c = boot[contrast]
+            label = f"{pretty} ({split})"
+            findings[label] = analyse(
+                label, c["gap_point"], c["ci_2.5"], c["ci_97.5"], n / nc, nc
+            )
+
     out = {
         "seed": args.seed,
         "method": "Deff = 1 + (m - 1) * rho; interval half-widths scaled by sqrt(Deff)",
