@@ -75,8 +75,8 @@ SKIP_DIR_NAMES = {"__pycache__", ".ipynb_checkpoints"}
 # tables and figures, and the README maps each script to what it produces. These
 # four produce nothing in the paper, so carrying them invites a reader to look
 # for an output that is not there. Two build and publish the deposit itself, and
-# two belong to the report-synthesis stage that Figure 1 greys out and the
-# caption says is not evaluated. All four stay in the GitHub repository.
+# two belong to a report-synthesis stage that the paper does not evaluate.
+# All four stay in the GitHub repository.
 EXCLUDED_SCRIPTS = {
     "make_deposit.py",
     "zenodo_new_version.py",
@@ -85,6 +85,8 @@ EXCLUDED_SCRIPTS = {
     # Reads paper/latex/main.tex, which the deposit does not carry by default,
     # so shipping it would put a script in the archive that cannot run there.
     "audit_manuscript_numbers.py",
+    # Packages paper/latex/ for the journal upload; not part of the analysis.
+    "make_submission_zip.py",
 }
 
 # Outputs of the excluded stage-7 scripts. The montage alone is 2.3 MB and no

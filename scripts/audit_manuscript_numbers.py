@@ -148,9 +148,51 @@ for name, (pt, be) in {
     "CNN-64 routing gap vs random (test)": (0.067, 0.444),
     "Consistency minus mean-of-5 confidence (val)": (0.083, 0.383),
     "Consistency minus mean-of-5 confidence (test)": (0.079, 0.096),
+    "Consistency minus single-query confidence (test)": (0.096, 0.171),
+    "MedGemma label-token minus random (val)": (0.049, 0.206),
+    "MedGemma label-token minus random (test)": (-0.056, 0.090),
+    "MedGemma label-token minus verbalized (val)": (0.058, 0.181),
+    "MedGemma label-token minus verbalized (test)": (-0.078, 0.108),
 }.items():
     want(f"T7 point {name}", de[name]["point_estimate"], pt)
     want(f"T7 rho {name}", de[name]["break_even_rho"], be)
+checks += 1
+if de["Consistency minus single-query confidence (val)"]["break_even_rho"] <= 1:
+    fails.append("S1: consistency minus single-query (val) printed as >1 but is not")
+
+# --- rows and columns added for tie reporting and single-query references --
+for split, printed in (("val", 0.336), ("test", 0.347)):
+    want(f"random single-query {split}", cons[split]["random_routing_auc"]["single_query_outcome"], printed)
+want("T11 single-query test", cons["test"]["signals"]["single_query_conf"]["auc"], 0.354)
+for sig, sd_p, tie_p in (
+    ("single_query_conf", 0.008, 0.92),
+    ("mean_textual_conf", 0.006, 0.75),
+    ("consistency_score", 0.005, 0.37),
+    ("entropy_over_k", 0.005, 0.35),
+):
+    s_ = cons["test"]["signals"][sig]
+    want(f"T11 test sd {sig}", s_["auc_sd_over_tie_orders"], sd_p)
+    want(f"T11 test ties {sig}", s_["tie_fraction"], tie_p, nd=2)
+cwt = load("results/consistency/medgemma-27b-it/V3_test/confusability_weighted.json")["signals"]["confusability_weighted"]
+want("T11 test sd confus", cwt["auc_sd_over_tie_orders"], 0.004)
+want("T11 test ties confus", cwt["tie_fraction"], 0.16, nd=2)
+rt = load("results/routing/routing_auc_ci.json")["results"]
+for key, sd_p in (
+    ("medgemma-27b-it|val", 0.004), ("medgemma-27b-it|test", 0.004),
+    ("gemma-3-27b-it|val", 0.003), ("gemma-3-27b-it|test", 0.004),
+    ("resnet18_64px|val", 0.000), ("resnet18_64px|test", 0.000),
+    ("resnet18_224px|val", 0.000), ("resnet18_224px|test", 0.000),
+):
+    want(f"T6 sd {key}", rt[key]["cal_auc_tie_sd"], sd_p)
+want("Gemma-3 val ties text", rt["gemma-3-27b-it|val"]["tie_fraction"], 0.33, nd=2)
+cbc = load("results/calibration/confidence_by_class.json")["results"]["medgemma-27b-it"]["val_full"]["by_predicted_class"]
+means = [v["mean_confidence"] for v in cbc.values()]
+want("per-class spread", max(means) - min(means), 0.015)
+lpr = load("results/logprob_confidence/comparison.json")["runs"]
+checks += 1
+if sum(r["n"] for r in lpr.values()) != 8002:
+    fails.append("log-prob call count is no longer 8,002")
+present("call count", "8,002 calls in all")
 
 # --- text that must be present / gone ---------------------------------------
 present("endpoint named", "api.ai.it.ufl.edu")
@@ -183,6 +225,8 @@ present("SI declaration", "Supplementary information:")
 present("SI numbering", r"\renewcommand{\thetable}{S\arabic{table}}", supp, "supplementary.tex")
 
 present("letter endpoint", "api.ai.it.ufl.edu", letter, "letter")
+present("code availability version DOI", "10.5281/zenodo.22927577")
+absent("superseded version DOI", "10.5281/zenodo.22319249")
 present("letter audit section", "Further corrections from our own audit", letter, "letter")
 
 # The manuscript states the current state of the work. Revision history, reviewer
