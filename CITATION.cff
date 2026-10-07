@@ -36,16 +36,22 @@ keywords:
   - verbalized confidence
   - uncertainty quantification
   - colorectal
-version: v3.0
-date-released: 2026-09-24
-doi: 10.5281/zenodo.22927577
+version: v4.0
+date-released: 2026-10-07
+doi: 10.5281/zenodo.23199902
 identifiers:
   - type: doi
     value: 10.5281/zenodo.22245989
     description: Concept DOI, resolving to the most recent version of this record.
   - type: doi
+    value: 10.5281/zenodo.23199902
+    description: Version DOI for v4.0, the release described in the manuscript. Adds the cohort-weighted re-analysis of the K=5 subsets, the wording-only prompt family, the image controls and the PLIP baseline.
+  - type: doi
+    value: 10.5281/zenodo.22928010
+    description: Automatic GitHub snapshot of the v3.0 tag, code only, without the prediction artifacts.
+  - type: doi
     value: 10.5281/zenodo.22927577
-    description: Version DOI for v3.0, the release described in the manuscript. Adds the label-token and single-query rows of the design-effect table and a script that redraws the confusion matrices and training curve from saved outputs.
+    description: Version DOI for v3.0, superseded. Adds the label-token and single-query rows of the design-effect table and a script that redraws the confusion matrices and training curve from saved outputs.
   - type: doi
     value: 10.5281/zenodo.22319249
     description: Version DOI for v2.4, superseded. Its design-effect table does not cover the label-token analysis.
