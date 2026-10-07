@@ -131,13 +131,7 @@ def main() -> int:
     args = parser.parse_args()
 
     routing = _load(PROJECT_ROOT / "results" / "routing" / "routing_auc_ci.json")["results"]
-    cons_val = _load(
-        PROJECT_ROOT / "results" / "consistency" / "medgemma-27b-it" / "V3" / "routing_signals.json"
-    )
-    cons_test = _load(
-        PROJECT_ROOT / "results" / "consistency" / "medgemma-27b-it" / "V3_test"
-        / "routing_signals.json"
-    )
+    cons_root = PROJECT_ROOT / "results" / "consistency" / "medgemma-27b-it"
 
     m_val_full = N_VAL_PATCHES / N_SLIDES_TRAIN_VAL
     m_test_full = N_TEST_PATCHES / N_SLIDES_TEST
@@ -158,25 +152,40 @@ def main() -> int:
         b = r["gap_bootstrap"]
         findings[label] = analyse(label, r["gap_point"], b["ci_2.5"], b["ci_97.5"], m, nc)
 
-    # Consistency contrasts (Tables 8 and 9), on the 1,800-patch subsets.
-    for src, split, m, nc in (
-        (cons_val, "val", m_subset_val, N_SLIDES_TRAIN_VAL),
-        (cons_test, "test", m_subset_test, N_SLIDES_TEST),
+    # Consistency contrasts, cohort-weighted (consistency_population.py). The
+    # estimates are for the whole split, but they rest on the 1,800 evaluated
+    # patches, so the cluster size is the subset's patches per slide. Unequal
+    # weights are already in the bootstrap interval being widened here.
+    # gap_point is the plug-in difference the manuscript prints; the bootstrap
+    # mean would put a break-even value against a number that appears nowhere.
+    wr, fo = "weighted_routing.json", "fixed_outcome.json"
+    cons_rows = [
+        (wr, "consistency_minus_random", "Consistency minus random"),
+        (wr, "mean5_conf_minus_random", "Mean-of-5 confidence minus random"),
+        (wr, "consistency_minus_mean5_conf", "Consistency minus mean-of-5 confidence"),
+        (fo, "modal_outcome:consistency_minus_single_query_conf",
+         "Consistency minus single-query confidence, fixed outcome"),
+    ]
+    for sub, split, m, nc in (
+        ("V3", "val", m_subset_val, N_SLIDES_TRAIN_VAL),
+        ("V3_test", "test", m_subset_test, N_SLIDES_TEST),
     ):
-        for contrast, pretty in (
-            ("consistency_minus_mean_textual_conf", "Consistency minus mean-of-5 confidence"),
-            ("consistency_minus_single_query_conf", "Consistency minus single-query confidence"),
-            ("mean_textual_conf_minus_random", "Mean-of-5 confidence minus random"),
-        ):
-            c = src["contrasts"][contrast]
+        loaded = {f: _load(cons_root / sub / f)["weighted_cohort"]["contrasts"] for f in (wr, fo)}
+        for f, contrast, pretty in cons_rows:
+            c = loaded[f][contrast]
             label = f"{pretty} ({split})"
-            # gap_point is the difference of the two tabulated AUCs, which is what
-            # the manuscript prints; the bootstrap mean is a slightly different
-            # quantity and using it here would put a break-even value against a
-            # point estimate that appears nowhere in the paper.
-            findings[label] = analyse(
-                label, c.get("gap_point", c["mean_diff"]), c["ci_2.5"], c["ci_97.5"], m, nc
-            )
+            findings[label] = analyse(label, c["gap_point"], c["ci_2.5"], c["ci_97.5"], m, nc)
+
+    # The wording-only family (V3W) reuses the validation selection; it joins the
+    # table once its weighted analysis exists, so the row set is fixed in advance.
+    v3w = cons_root / "V3W" / wr
+    if v3w.exists():
+        c = _load(v3w)["weighted_cohort"]["contrasts"]["consistency_minus_random"]
+        label = "Wording-only (V3W) consistency minus random (val)"
+        findings[label] = analyse(label, c["gap_point"], c["ci_2.5"], c["ci_97.5"],
+                                  m_subset_val, N_SLIDES_TRAIN_VAL)
+    else:
+        print(f"V3W row pending: {v3w} not found", file=sys.stderr)
 
     # Label-token comparison (Table S2), on its own subsamples: 2,001 validation
     # patches (the held-out evaluation partition) and 2,000 external patches.

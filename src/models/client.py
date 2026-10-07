@@ -253,6 +253,59 @@ class Client:
             token_logprobs,
         )
 
+    def classify_text_only(
+        self,
+        prompt_text: str,
+        task: str,
+        model: str | None = None,
+        max_tokens: int = 128,
+    ) -> Response:
+        """
+        Send a classification prompt with no image and parse it like analyze_tiles.
+
+        This exists for the image-removal control of the consistency experiment:
+        with the image withheld every patch receives the same input, so any
+        per-patch variation in the answers has to come from the image. The parse
+        path and decoding settings are the same as analyze_tiles so the two are
+        comparable call for call.
+
+        Args:
+            prompt_text: The full prompt, sent as the only content block.
+            task: Task key passed to the parser.
+            model: Override model. If None, uses self.model.
+            max_tokens: Maximum tokens in the response.
+
+        Returns:
+            Response with tile_paths empty.
+        """
+        model = model or self.model
+        raw_text, prompt_tokens, completion_tokens = self._call_with_retry(
+            model=model,
+            content=[{"type": "text", "text": prompt_text}],
+            max_tokens=max_tokens,
+        )
+        prediction, confidence = _parse_prediction(raw_text, task)
+        return Response(
+            prediction=prediction,
+            confidence=confidence,
+            rationale=_extract_rationale(raw_text),
+            raw_text=raw_text,
+            tile_paths=[],
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+
+    def list_models(self) -> list[dict]:
+        """
+        Return the endpoint's /models entries as plain dicts.
+
+        The endpoint exposes no model snapshot or version string, so the listing is
+        the most that can be recorded about the serving configuration at run time.
+        Unbilled; used to stamp run metadata.
+        """
+        return [m.model_dump() for m in self._client.models.list().data]
+
     def embed_text(self, text: str, model: str = "nomic-embed-text-v1.5") -> list[float]:
         """
         Embed a clinical text string using the specified embedding model.

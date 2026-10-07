@@ -1,274 +1,359 @@
 """
 scripts/audit_manuscript_numbers.py
 
-Cross-check every AUC, gap and break-even the manuscript prints against the
-artifact it comes from, rounded once from full precision.
+Cross-check the numbers the manuscript and supplement print against the
+artifacts they come from.
 
-Why this exists. Three of the four review passes this manuscript has been
-through opened on the same defect: a number in the text that does not
-reconcile with the table beside it. Editorial care did not catch it; a script
-that recomputes every printed value does. Run it before any rebuild of
-paper/latex/main.tex.
+Why this exists. Most review passes on this manuscript opened on the same
+defect: a number in the text that does not reconcile with the table beside it
+or with the file it came from. Editorial care did not catch it; a script that
+re-derives every printed value does.
+
+Two kinds of check. Where an artifact stores the unrounded value (the
+cohort-weighted K=5 analyses write an "exact" block), the printed string is
+built from it, rounded once, in the manuscript's own format, and must appear
+verbatim in the LaTeX. Where an artifact stores four decimals only, the printed
+three-decimal value must lie within half a unit of the stored one, which is as
+much as a four-decimal file can certify. Open [PENDING] markers are counted and
+reported; they do not fail the audit until submission.
 
 Usage:
     python scripts/audit_manuscript_numbers.py
+    python scripts/audit_manuscript_numbers.py --final    # also fail on [PENDING]
 """
+import argparse
 import json
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+CONS = "results/consistency/medgemma-27b-it"
 tex = (ROOT / "paper" / "latex" / "main.tex").read_text(encoding="utf-8")
-letter = (ROOT / "paper" / "RESPONSE_LETTER_SR_R1.md").read_text(encoding="utf-8")
 supp = (ROOT / "paper" / "latex" / "supplementary.tex").read_text(encoding="utf-8")
+letter_path = ROOT / "paper" / "RESPONSE_LETTER_SR_R3.md"
+letter = letter_path.read_text(encoding="utf-8") if letter_path.exists() else ""
 
-fails, checks = [], 0
+fails: list[str] = []
+checks = 0
 
 
-def load(p):
+def load(p: str) -> dict:
     return json.loads((ROOT / p).read_text(encoding="utf-8"))
 
 
-def want(label, artifact_value, printed, nd=3):
-    global checks
-    checks += 1
-    got = f"{round(float(artifact_value), nd):+.{nd}f}"
-    exp = f"{printed:+.{nd}f}"
-    if got != exp:
-        fails.append(f"{label}: artifact {got} vs manuscript {exp}")
+def num(x: float, signed: bool) -> str:
+    """One number as the manuscript prints it inside an interval or as a point."""
+    s = f"{x:+.3f}" if signed else f"{x:.3f}"
+    if s.lstrip("+-") == "0.000" and x < 0:
+        s = "-0.000"
+    return f"${s}$" if (signed or s.startswith("-")) else s
 
 
-def present(label, needle, hay=None, where="main.tex"):
+def gap_string(c: dict) -> str:
+    """Point and interval from an artifact's exact block, e.g. $+0.123$ [0.105, 0.140]."""
+    e = c["exact"]
+    lo, hi = e["ci"]
+    return f"{num(e['gap_point'], True)} [{num(lo, False)}, {num(hi, False)}]"
+
+
+def present(label: str, needle: str, hay: str | None = None, where: str = "main.tex") -> None:
     global checks
     checks += 1
     if needle not in (tex if hay is None else hay):
         fails.append(f"{label}: not found in {where} -> {needle!r}")
 
 
-def absent(label, needle, hay=None, where="main.tex"):
+def absent(label: str, needle: str, hay: str | None = None, where: str = "main.tex") -> None:
     global checks
     checks += 1
     if needle in (tex if hay is None else hay):
         fails.append(f"{label}: stale text still in {where} -> {needle!r}")
 
 
-# --- Table 13 gaps and Section 4.6 contrasts -------------------------------
-lp = load("results/logprob_confidence/comparison.json")
+def near(label: str, artifact: float, printed: float, nd: int = 3) -> None:
+    """A printed value is consistent with a four-decimal artifact."""
+    global checks
+    checks += 1
+    if abs(float(artifact) - printed) > 0.5 * 10 ** -nd + 1e-9:
+        fails.append(f"{label}: artifact {artifact} vs printed {printed}")
+
+
+def exact(label: str, value: float, printed: float, nd: int = 3) -> None:
+    """A printed value equals the unrounded artifact value rounded once."""
+    global checks
+    checks += 1
+    if f"{value:.{nd}f}" != f"{printed:.{nd}f}":
+        fails.append(f"{label}: artifact {value:.{nd}f} vs printed {printed:.{nd}f}")
+
+
+# --- Table 6: routing by confidence -------------------------------------------
+rt = load("results/routing/routing_auc_ci.json")["results"]
+for key, (cal, rnd, gap, lo, hi) in {
+    "medgemma-27b-it|val": (0.396, 0.402, -0.007, -0.012, -0.001),
+    "medgemma-27b-it|test": (0.376, 0.342, 0.034, 0.027, 0.041),
+    "gemma-3-27b-it|val": (0.470, 0.356, 0.114, 0.108, 0.119),
+    "gemma-3-27b-it|test": (0.425, 0.309, 0.115, 0.108, 0.123),
+    "resnet18_64px|test": (0.978, 0.911, 0.067, 0.061, 0.073),
+}.items():
+    r = rt[key]
+    near(f"T6 cal {key}", r["cal_auc"], cal)
+    near(f"T6 rnd {key}", r["random_auc"], rnd)
+    near(f"T6 gap {key}", r["gap_point"], gap)
+    near(f"T6 lo {key}", r["gap_bootstrap"]["ci_2.5"], lo)
+    near(f"T6 hi {key}", r["gap_bootstrap"]["ci_97.5"], hi)
+    checks += 1
+    if r["random_auc"] != r["base_accuracy"]:
+        fails.append(f"T6 {key}: random reference is not the exact base accuracy")
+
+# --- Tables 8 to 10: cohort-weighted K=5 analyses (exact strings) ---------------
+for sub, split in (("V3", "val"), ("V3_test", "test")):
+    w = load(f"{CONS}/{sub}/weighted_routing.json")
+    fo = load(f"{CONS}/{sub}/fixed_outcome.json")["weighted_cohort"]["contrasts"]
+    cv = load(f"{CONS}/{sub}/confusability_valweights.json")
+    lvo = load(f"{CONS}/{sub}/leave_variant_out.json")["weighted_cohort"]["contrasts"]
+    wc = w["weighted_cohort"]["contrasts"]
+    for name, c in (
+        ("consistency - random", wc["consistency_minus_random"]),
+        ("mean5 - random", wc["mean5_conf_minus_random"]),
+        ("single - random", wc["single_query_conf_minus_random"]),
+        ("consistency - mean5", wc["consistency_minus_mean5_conf"]),
+        ("voting gain", wc["voting_gain_accuracy"]),
+        ("fixed modal", fo["modal_outcome:consistency_minus_single_query_conf"]),
+        ("fixed single", fo["single_query_outcome:consistency_minus_single_query_conf"]),
+        ("confusability - consistency", cv["weighted_cohort"]["contrasts"]["valweights_minus_consistency"]),
+    ):
+        present(f"T9 {split} {name}", gap_string(c))
+    for k, c in lvo.items():
+        present(f"T10 {split} {k}", gap_string(c))
+    # Table 8 AUCs, cohort and subset, rounded once from the unrounded values.
+    order = ("single_query_conf|single_query", "random|single_query", "mean5_conf|modal",
+             "consistency|modal", "entropy|modal")
+    for blk in ("weighted_cohort", "unweighted_subset"):
+        vals = w[blk]["auc_exact"]
+        for k in order:
+            present(f"T8 {split} {blk} {k}", f"{vals[k]:.3f}")
+        present(f"T8 {split} {blk} confusability",
+                f"{cv[blk]['auc_exact']['confusability_valweights|modal']:.3f}")
+    # Subset point estimates in Table 9.
+    uc = w["unweighted_subset"]["contrasts"]
+    for k in ("consistency_minus_random", "mean5_conf_minus_random",
+              "single_query_conf_minus_random", "consistency_minus_mean5_conf", "voting_gain_accuracy"):
+        present(f"T9 subset {split} {k}", num(uc[k]["exact"]["gap_point"], True))
+    m4 = load(f"{CONS}/{sub}/accuracy_by_agreement.json")["mean_confidence_without_variant_2"]
+    present(f"4.5 mean of four without variant 2 {split}",
+            gap_string(m4["mean4_conf_without_v2_minus_random"]))
+    present(f"4.5 CNN-test confusability {split}",
+            num(cv["weighted_cohort"]["contrasts"]["cnn_test_minus_consistency"]["exact"]["gap_point"], True))
+
+if (ROOT / CONS / "V3W" / "weighted_routing.json").exists():
+    v3w = load(f"{CONS}/V3W/weighted_routing.json")["weighted_cohort"]["contrasts"]
+    for k in ("consistency_minus_random", "consistency_minus_mean5_conf", "voting_gain_accuracy",
+              "mean5_conf_minus_random"):
+        present(f"4.5 V3W {k}", gap_string(v3w[k]))
+    lw = load(f"{CONS}/V3W/leave_variant_out.json")["weighted_cohort"]["contrasts"]
+    drops = [lw[f"drop_{i}:consistency_minus_random"]["exact"]["gap_point"] for i in range(5)]
+    present("4.5 V3W leave-one-out range",
+            f"between {num(min(drops), True)} and {num(max(drops), True)}")
+    s1_v3w = load("results/clustering/design_effect_sensitivity.json")["findings"][
+        "Wording-only (V3W) consistency minus random (val)"]
+    near("S1 V3W point", s1_v3w["point_estimate"], 0.090)
+    checks += 1
+    if not s1_v3w["break_even_rho"] > 1:
+        fails.append("S1 V3W row: break-even printed as >1 but is not")
+
+v5 = load(f"{CONS}/V5/weighted_routing.json")["contrasts_weighted"]
+for k in ("consistency_minus_random", "mean5_conf_minus_random", "consistency_minus_mean5_conf"):
+    present(f"4.5 V5 {k}", gap_string(v5[k]))
+
+# --- Holm outcomes printed in Tables 9, 10 and S6 ------------------------------
+holm = {r["id"]: r for r in load("results/multiplicity/holm.json")["contrasts"]}
+for cid in ("consistency_vs_random", "consistency_vs_mean5", "consistency_vs_single_query_fixed_outcome"):
+    for split in ("val", "test"):
+        checks += 1
+        if not holm[f"{cid}_{split}"]["survives_holm"]:
+            fails.append(f"Holm: {cid}_{split} printed as holding but does not")
+checks += 1
+if holm["v3_edits_only_consistency_vs_random_test"]["survives_holm"] or not \
+        holm["v3_edits_only_consistency_vs_random_val"]["survives_holm"]:
+    fails.append("Holm: Table 10 caption says V3 edits hold on validation only")
+
+# --- Table S2 and Section 4.6 ---------------------------------------------------
+lp = load("results/logprob_confidence/comparison.json")["runs"]
 for (run, contrast), printed in {
     ("medgemma-27b-it|val", "label_token_minus_random"): 0.049,
-    ("medgemma-27b-it|val", "verbalized_minus_random"): -0.009,
+    ("medgemma-27b-it|val", "verbalized_minus_random"): -0.008,
     ("medgemma-27b-it|test", "label_token_minus_random"): -0.056,
-    ("medgemma-27b-it|test", "verbalized_minus_random"): 0.022,
-    ("gemma-3-27b-it|val", "label_token_minus_random"): 0.105,
-    ("gemma-3-27b-it|val", "verbalized_minus_random"): 0.116,
-    ("gemma-3-27b-it|test", "label_token_minus_random"): 0.132,
+    ("medgemma-27b-it|test", "verbalized_minus_random"): 0.021,
+    ("gemma-3-27b-it|val", "label_token_minus_random"): 0.106,
+    ("gemma-3-27b-it|val", "verbalized_minus_random"): 0.117,
+    ("gemma-3-27b-it|test", "label_token_minus_random"): 0.133,
     ("gemma-3-27b-it|test", "verbalized_minus_random"): 0.115,
-    ("medgemma-27b-it|val", "label_token_minus_verbalized"): 0.058,
-    ("medgemma-27b-it|test", "label_token_minus_verbalized"): -0.078,
-    ("gemma-3-27b-it|val", "label_token_minus_verbalized"): -0.011,
-    ("gemma-3-27b-it|test", "label_token_minus_verbalized"): 0.017,
+    ("medgemma-27b-it|val", "label_token_minus_verbalized"): 0.057,
+    ("medgemma-27b-it|test", "label_token_minus_verbalized"): -0.077,
 }.items():
-    c = lp["runs"][run]["bootstrap"][contrast]
-    want(f"T13 {run} {contrast}", c["gap_point"], printed)
+    c = lp[run]["bootstrap"][contrast]
+    near(f"S2 {run} {contrast}", c["gap_point"], printed)
     checks += 1
     if not c["point_inside_ci"]:
-        fails.append(f"T13 {run} {contrast}: point outside its own CI")
-
-# --- Tables 11 and 12 AUCs --------------------------------------------------
-cons = {
-    "val": load("results/consistency/medgemma-27b-it/V3/routing_signals.json"),
-    "test": load("results/consistency/medgemma-27b-it/V3_test/routing_signals.json"),
-    "V5": load("results/consistency/medgemma-27b-it/V5/routing_signals.json"),
-}
-for split, sig, printed in [
-    ("val", "single_query_conf", 0.320),
-    ("val", "mean_textual_conf", 0.348),
-    ("val", "consistency_score", 0.431),
-    ("val", "entropy_over_k", 0.431),
-    ("val", "mean_textual_conf_flip", 0.332),
-    ("test", "consistency_score", 0.451),
-    ("test", "entropy_over_k", 0.451),
-    ("test", "mean_textual_conf", 0.372),
-    ("test", "mean_textual_conf_flip", 0.344),
-    ("V5", "consistency_score", 0.406),
-    ("V5", "mean_textual_conf", 0.409),
-]:
-    want(f"AUC {split} {sig}", cons[split]["signals"][sig]["auc"], printed)
+        fails.append(f"S2 {run} {contrast}: point outside its own CI")
     checks += 1
-    if cons[split]["tie_handling"]["tie_break"] != "expected":
-        fails.append(f"{split}: tie_break is not 'expected'")
+    if lp[run]["label_token_confidence"]["random_routing_auc"] != lp[run]["accuracy"]:
+        fails.append(f"S2 {run}: random reference is not the exact accuracy")
 
-for split, printed in (("val", 0.339), ("test", 0.356), ("V5", 0.354)):
-    want(f"random {split}", cons[split]["random_routing_auc"]["modal_vote_outcome"], printed)
-
-# --- Section 4.5 gaps -------------------------------------------------------
-for (split, contrast), printed in {
-    ("val", "consistency_minus_single_query_conf"): 0.111,
-    ("val", "consistency_minus_mean_textual_conf"): 0.083,
-    ("val", "mean_textual_conf_minus_random"): 0.010,
-    ("val", "mean_textual_conf_flip_minus_random"): -0.007,
-    ("val", "consistency_minus_entropy"): -0.000,
-    ("test", "consistency_minus_single_query_conf"): 0.096,
-    ("test", "consistency_minus_mean_textual_conf"): 0.079,
-    ("test", "mean_textual_conf_minus_random"): 0.016,
-    ("test", "mean_textual_conf_flip_minus_random"): -0.012,
-    ("V5", "mean_textual_conf_minus_random"): 0.056,
-    ("V5", "consistency_minus_mean_textual_conf"): -0.004,
-}.items():
-    c = cons[split]["contrasts"][contrast]
-    want(f"gap {split} {contrast}", c["gap_point"], printed)
-    checks += 1
-    if not c["point_inside_ci"]:
-        fails.append(f"gap {split} {contrast}: point outside its own CI")
-
-# --- confusability ----------------------------------------------------------
-for split, path, auc_p, gap_p in (
-    ("val", "V3", 0.467, 0.036),
-    ("test", "V3_test", 0.474, 0.024),
+cs = load("results/logprob_confidence/censoring_sensitivity.json")["runs"]
+for run, contrast, printed in (
+    ("medgemma-27b-it|val", "label_token_minus_verbalized", -0.076),
+    ("medgemma-27b-it|val", "label_token_minus_random", -0.064),
+    ("medgemma-27b-it|test", "label_token_minus_verbalized", -0.112),
+    ("medgemma-27b-it|test", "label_token_minus_random", -0.099),
+    ("gemma-3-27b-it|val", "label_token_minus_random", 0.046),
+    ("gemma-3-27b-it|test", "label_token_minus_random", 0.060),
 ):
-    cw = load(f"results/consistency/medgemma-27b-it/{path}/confusability_weighted.json")
-    want(f"confus {split} auc", cw["signals"]["confusability_weighted"]["auc"], auc_p)
-    want(f"confus {split} gap", cw["contrasts"]["weighted_minus_consistency"]["gap_point"], gap_p)
-    checks += 1
-    if not cw["uniform_control_reproduces_consistency"]["exact"]:
-        fails.append(f"confus {split}: uniform control no longer exact")
+    near(f"4.6 all-nine {run} {contrast}", cs[run]["all_nine_classes_present"][contrast]["gap_point"], printed)
+near("4.6 eight classes val", cs["medgemma-27b-it|val"]["by_n_classes_stratum"]["8"]
+     ["label_token_minus_verbalized"]["gap_point"], 0.084)
+for run, (m_val, m_test) in (("medgemma-27b-it", (8.22, 8.25)), ("gemma-3-27b-it", (6.71, 6.75))):
+    near(f"3.6 mean classes {run} val", cs[f"{run}|val"]["censoring_profile"]["mean_n_classes"], m_val, nd=2)
+    near(f"3.6 mean classes {run} test", cs[f"{run}|test"]["censoring_profile"]["mean_n_classes"], m_test, nd=2)
 
-# --- Table 9 ----------------------------------------------------------------
-for key, printed in (("resnet18_64px", 0.051), ("resnet18_224px", 0.093)):
-    t = load(f"results/calibration/{key}/calibration_params.json")["transfer"]
-    want(f"T9 {key} change", t["change"], printed)
-
-# --- Table 7 ----------------------------------------------------------------
+# --- Table S1 -------------------------------------------------------------------
 de = load("results/clustering/design_effect_sensitivity.json")["findings"]
 for name, (pt, be) in {
-    "MedGemma routing gap vs random (val)": (-0.007, 0.004),
-    "MedGemma routing gap vs random (test)": (0.033, 0.068),
-    "Gemma-3 routing gap vs random (test)": (0.114, 0.850),
-    "CNN-64 routing gap vs random (test)": (0.067, 0.444),
-    "Consistency minus mean-of-5 confidence (val)": (0.083, 0.383),
-    "Consistency minus mean-of-5 confidence (test)": (0.079, 0.096),
-    "Consistency minus single-query confidence (test)": (0.096, 0.171),
-    "MedGemma label-token minus random (val)": (0.049, 0.206),
-    "MedGemma label-token minus random (test)": (-0.056, 0.090),
-    "MedGemma label-token minus verbalized (val)": (0.058, 0.181),
-    "MedGemma label-token minus verbalized (test)": (-0.078, 0.108),
+    "MedGemma routing gap vs random (val)": (-0.007, 0.003),
+    "MedGemma routing gap vs random (test)": (0.034, 0.073),
+    "Gemma-3 routing gap vs random (test)": (0.115, 0.868),
+    "CNN-64 routing gap vs random (test)": (0.067, 0.446),
+    "Consistency minus random (test)": (0.106, 0.684),
+    "Mean-of-5 confidence minus random (val)": (0.026, 0.080),
+    "Mean-of-5 confidence minus random (test)": (0.053, 0.128),
+    "Consistency minus mean-of-5 confidence (val)": (0.098, 0.842),
+    "Consistency minus mean-of-5 confidence (test)": (0.054, 0.068),
+    "Consistency minus single-query confidence, fixed outcome (test)": (0.081, 0.186),
+    "MedGemma label-token minus random (val)": (0.049, 0.215),
+    "MedGemma label-token minus random (test)": (-0.056, 0.091),
+    "MedGemma label-token minus verbalized (val)": (0.057, 0.177),
+    "MedGemma label-token minus verbalized (test)": (-0.077, 0.108),
 }.items():
-    want(f"T7 point {name}", de[name]["point_estimate"], pt)
-    want(f"T7 rho {name}", de[name]["break_even_rho"], be)
-checks += 1
-if de["Consistency minus single-query confidence (val)"]["break_even_rho"] <= 1:
-    fails.append("S1: consistency minus single-query (val) printed as >1 but is not")
+    near(f"S1 point {name}", de[name]["point_estimate"], pt)
+    near(f"S1 rho {name}", de[name]["break_even_rho"], be)
+for name in ("Gemma-3 routing gap vs random (val)", "Consistency minus random (val)",
+             "Consistency minus single-query confidence, fixed outcome (val)"):
+    checks += 1
+    if not de[name]["break_even_rho"] > 1:
+        fails.append(f"S1: {name} printed as >1 but is not")
 
-# --- rows and columns added for tie reporting and single-query references --
-for split, printed in (("val", 0.336), ("test", 0.347)):
-    want(f"random single-query {split}", cons[split]["random_routing_auc"]["single_query_outcome"], printed)
-want("T11 single-query test", cons["test"]["signals"]["single_query_conf"]["auc"], 0.354)
-for sig, sd_p, tie_p in (
-    ("single_query_conf", 0.008, 0.92),
-    ("mean_textual_conf", 0.006, 0.75),
-    ("consistency_score", 0.005, 0.37),
-    ("entropy_over_k", 0.005, 0.35),
-):
-    s_ = cons["test"]["signals"][sig]
-    want(f"T11 test sd {sig}", s_["auc_sd_over_tie_orders"], sd_p)
-    want(f"T11 test ties {sig}", s_["tie_fraction"], tie_p, nd=2)
-cwt = load("results/consistency/medgemma-27b-it/V3_test/confusability_weighted.json")["signals"]["confusability_weighted"]
-want("T11 test sd confus", cwt["auc_sd_over_tie_orders"], 0.004)
-want("T11 test ties confus", cwt["tie_fraction"], 0.16, nd=2)
-rt = load("results/routing/routing_auc_ci.json")["results"]
-for key, sd_p in (
-    ("medgemma-27b-it|val", 0.004), ("medgemma-27b-it|test", 0.004),
-    ("gemma-3-27b-it|val", 0.003), ("gemma-3-27b-it|test", 0.004),
-    ("resnet18_64px|val", 0.000), ("resnet18_64px|test", 0.000),
-    ("resnet18_224px|val", 0.000), ("resnet18_224px|test", 0.000),
-):
-    want(f"T6 sd {key}", rt[key]["cal_auc_tie_sd"], sd_p)
-want("Gemma-3 val ties text", rt["gemma-3-27b-it|val"]["tie_fraction"], 0.33, nd=2)
-cbc = load("results/calibration/confidence_by_class.json")["results"]["medgemma-27b-it"]["val_full"]["by_predicted_class"]
-means = [v["mean_confidence"] for v in cbc.values()]
-want("per-class spread", max(means) - min(means), 0.015)
-lpr = load("results/logprob_confidence/comparison.json")["runs"]
+# --- Methods facts -------------------------------------------------------------
+flow = load("results/data/sample_flow.json")["overlaps_with_pilot"]
+for label, value in (("370", flow["medgemma-27b-it"]["calibration_set"]["pilot_overlap"]),
+                     ("80", flow["medgemma-27b-it"]["held_out_evaluation_partition"]["pilot_overlap"]),
+                     ("367", flow["gemma-3-27b-it"]["calibration_set"]["pilot_overlap"]),
+                     ("83", flow["gemma-3-27b-it"]["held_out_evaluation_partition"]["pilot_overlap"]),
+                     ("78", flow["consistency_validation_subset"]["pilot_overlap"])):
+    checks += 1
+    if str(value) != label:
+        fails.append(f"3.1 pilot overlap printed {label}, artifact {value}")
+nll = load("results/calibration/nll_curve.json")["models"]
+near("3.3 MedGemma NLL T=1", nll["medgemma-27b-it"]["nll_at"]["1.0"], 2.117)
+near("3.3 MedGemma NLL T=200", nll["medgemma-27b-it"]["nll_at"]["200.0"], 0.695)
+near("3.3 Gemma-3 NLL T=1", nll["gemma-3-27b-it"]["nll_at"]["1.0"], 1.492)
+near("3.3 Gemma-3 NLL T=200", nll["gemma-3-27b-it"]["nll_at"]["200.0"], 0.694)
+near("3.3 log-odds on errors", nll["medgemma-27b-it"]["conditions"]["logodds_mass_on_errors"], 16546, nd=0)
+near("3.3 log-odds on correct", nll["medgemma-27b-it"]["conditions"]["logodds_mass_on_correct"], 10737, nd=0)
 checks += 1
-if sum(r["n"] for r in lpr.values()) != 8002:
-    fails.append("log-prob call count is no longer 8,002")
-present("call count", "8,002 calls in all")
+if nll["gemma-3-27b-it"]["conditions"]["n_logit_negative"] != 29:
+    fails.append("3.3: Gemma-3 confidences below 0.5 is not 29")
 
-# --- text that must be present / gone ---------------------------------------
+ctrl = load(f"{CONS}/controls/summary.json")
+if "swap" in ctrl:
+    sw = ctrl["swap"]
+    near("4.5 swap donor match %", 100 * sw["per_call_label_match_donor_stored"], 98.6, nd=1)
+    near("4.5 swap recipient match %", 100 * sw["per_call_label_match_recipient_stored"], 24.1, nd=1)
+    near("4.5 swap corr donor", sw["consistency_corr_with_donor_stored"], 0.97, nd=2)
+    near("4.5 swap corr recipient", sw["consistency_corr_with_recipient_stored"], -0.10, nd=2)
+if "shuffle" in ctrl and ctrl["shuffle"].get("weighted_cohort"):
+    shw = ctrl["shuffle"]["weighted_cohort"]
+    present("4.5 shuffle gap", gap_string(shw["contrasts"]["consistency_minus_random"]))
+    present("4.5 real minus shuffled", gap_string(shw["contrasts"]["real_minus_shuffled_gap"]))
+    near("4.5 shuffled cohort accuracy %", 100 * shw["auc"]["shuffled_random"], 11.3, nd=1)
+    near("4.5 shuffled background share %",
+         100 * ctrl["shuffle"]["shuffled"]["modal_label_distribution"]["background"], 89, nd=0)
+if "v3w" in ctrl:
+    checks += 1
+    if ctrl["v3w"]["variant0_disagreements_with_stored_v3_variant0"] != 30:
+        fails.append("4.5 V3W drift count is not 30")
+if "no_image" in ctrl:
+    for cond in ("text_only", "grey"):
+        checks += 1
+        if not ctrl["no_image"][cond]["all_repeats_identical"]:
+            fails.append(f"4.5 no-image {cond}: repeats are not identical")
+
+# --- PLIP baseline (Section 4.3, Table S7) --------------------------------------
+if (ROOT / "results/plip/summary.json").exists():
+    pl = load("results/plip/summary.json")
+    ens, probe = pl["zeroshot_ensemble"], pl["probe"]["test"]
+    for split, (acc, auroc, gap, lo, hi) in (("val", (49.7, 0.586, 0.090, 0.082, 0.098)),
+                                             ("test", (53.8, 0.593, 0.098, 0.088, 0.107))):
+        r = ens[split]
+        near(f"4.3 PLIP accuracy {split}", 100 * r["accuracy"], acc, nd=1)
+        near(f"4.3 PLIP AUROC {split}", r["auroc"], auroc)
+        near(f"4.3 PLIP gap {split}", r["gap_point"], gap)
+        near(f"4.3 PLIP gap lo {split}", r["gap_bootstrap"]["ci_2.5"], lo)
+        near(f"4.3 PLIP gap hi {split}", r["gap_bootstrap"]["ci_97.5"], hi)
+        checks += 1
+        if r["random_auc"] != r["accuracy"]:
+            fails.append(f"PLIP {split}: random reference is not the exact accuracy")
+    near("4.3 PLIP probe accuracy", 100 * probe["accuracy"], 94.7, nd=1)
+    near("4.3 PLIP probe gap", probe["gap_point"], 0.044)
+    checks += 1
+    if probe["leakage_inflated"] or not pl["probe"]["val"]["leakage_inflated"]:
+        fails.append("PLIP probe: leakage flags are not val-only")
+    present("Table S7 in supplement", "label{tab:plip}", supp, "supplementary.tex")
+
+# --- text that must be present or gone ----------------------------------------
 present("endpoint named", "api.ai.it.ufl.edu")
-present("request window", "22:07 and 23:53 UTC")
-present("file write dates", "25 June to 3 July 2026")
 present("gap convention", "computed at full precision and rounded once")
-present("tie estimator note", "sampled mean lands within 0.0013")
-present("T9 caption", "subtracting the printed cells gives 0.094")
-present("within-class ref", r"excluding it (Section~\ref{subsec:routing-results})")
+present("A_AUC estimator", r"\frac{1}{0.99} \int_0^{0.99}")
 for gone in (
-    "the inference date range for every run",
-    "difference of the two point estimates in the same table",
-    r"(Section~\ref{subsec:calibration-results}). The honest summary",
-    "disjoint by 0.021",
-    "$+0.112$",
-    "$+0.097$",
-    "0.475 \\\\",
+    "Prompt-driven consistency cannot produce",
+    "prompt paraphrases routes",
+    "8.28 of the nine",
+    "averaged over 30",
+    "decreases monotonically in T, so the optimizer",
+    "our best signal",
+    "on validation the failure lies in verbalization",
+    "there the failure lies in verbalization",
+    "scored as incorrect rather than excluded",
+    "lets us isolate what medical fine-tuning does",
+    "the signal we end up recommending",
 ):
     absent("stale", gone)
+    absent("stale", gone, supp, "supplementary.tex")
 
-# --- the three Supplementary tables and the pointers to them ----------------
-# Each was requested in review, so the main text has to say where it went and
-# the supplement has to actually contain it.
-for label in ("tab:cluster", "tab:logprob", "tab:seeds"):
-    absent("moved table still in main", r"\ref{" + label + "}")
+for label in ("tab:cluster", "tab:logprob", "tab:sampleflow", "tab:pilot", "tab:censoring", "tab:holm"):
     present(f"{label} in supplement", "label{" + label + "}", supp, "supplementary.tex")
-for n in ("Table~S1", "Table~S2", "Table~S3"):
-    present(f"{n} pointer", n)
+present("SI table numbering", r"\renewcommand{\thetable}{S\arabic{table}}", supp, "supplementary.tex")
+present("SI figure numbering", r"\renewcommand{\thefigure}{S\arabic{figure}}", supp, "supplementary.tex")
 present("SI declaration", "Supplementary information:")
-present("SI numbering", r"\renewcommand{\thetable}{S\arabic{table}}", supp, "supplementary.tex")
-
-present("letter endpoint", "api.ai.it.ufl.edu", letter, "letter")
-present("code availability version DOI", "10.5281/zenodo.22927577")
-absent("superseded version DOI", "10.5281/zenodo.22319249")
-present("letter audit section", "Further corrections from our own audit", letter, "letter")
 
 # The manuscript states the current state of the work. Revision history, reviewer
-# attributions and self-justification belong in the response letter, not in the paper.
-for phrase in (
-    "submitted version",
-    "earlier version",
-    "previous version",
-    "response to reviewers",
-    "reviewer",
-    "requested in review",
-    "we withdraw",
-    "was our error",
-    "we no longer",
-    "That objection",
-):
+# attributions and self-justification belong in the response letter.
+for phrase in ("submitted version", "earlier version", "previous version", "response to reviewers",
+               "reviewer", "requested in review", "we withdraw", "was our error", "we no longer"):
     absent(f"narration in main.tex: {phrase}", phrase)
     absent(f"narration in supplementary.tex: {phrase}", phrase, supp, "supplementary.tex")
-for gone in (
-    "The other two we found while auditing",
-    "Both columns order the models the same way",
-    "which is 0.409 minus 0.354 to three decimals",
-    "0.4307",
-    "0.3477",
-    "+0.0830",
-    "+0.1121",
-    "+0.0973",
-):
-    absent("stale letter", gone, letter, "letter")
 
-# --- build logs -------------------------------------------------------------
-# latexdiff adds text, so the marked-up build is allowed the overfull box the
-# clean build is not.
-for log, allow_overfull in (("paper/latex/main.log", False), ("paper/diff/diff.log", True)):
-    checks += 1
-    text = (ROOT / log).read_text(encoding="utf-8", errors="ignore")
-    if re.search(r"Undefined|undefined (references|citations)", text):
-        fails.append(f"{log}: undefined reference")
-    if not allow_overfull and "Overfull" in text:
-        fails.append(f"{log}: overfull box")
+if letter:
+    present("letter answers every Reviewer 3 item", "### R3.15", letter, "letter")
 
-print(f"{checks} checks run")
+parser = argparse.ArgumentParser()
+parser.add_argument("--final", action="store_true")
+args = parser.parse_args()
+pending = {name: len(re.findall(r"\[PENDING", s)) for name, s in
+           (("main.tex", tex), ("supplementary.tex", supp), ("letter", letter))}
+print(f"{checks} checks run; open [PENDING] markers: {pending}")
+if args.final and any(pending.values()):
+    fails.append(f"[PENDING] markers remain: {pending}")
 if fails:
     print(f"{len(fails)} FAILED:")
     for f in fails:

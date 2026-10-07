@@ -47,10 +47,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 BASE = "https://zenodo.org/api"
-# Point at the newest published version in the lineage. Zenodo derives a new
-# version from whichever record this names, so leaving it on v2.0 would branch
-# from the code-only archive and drop the prediction artifacts again.
-RECORD_ID = "22250253"          # the published v2.3 version
+# Point at the newest full-archive version in the lineage. Zenodo derives a new
+# version from whichever record this names, so pointing it at the GitHub snapshot
+# (22928010, code only) would branch from an archive without the prediction artifacts.
+RECORD_ID = "22927577"          # the published v3.0 full archive
 CONCEPT_ID = "22245989"         # concept record, stable across versions
 DEFAULT_ZIP = PROJECT_ROOT / "build" / "zenodo_deposit.zip"
 TIMEOUT = httpx.Timeout(60.0, read=600.0, write=600.0)

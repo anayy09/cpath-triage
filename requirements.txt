@@ -14,6 +14,7 @@ pyarrow>=16.0
 torch>=2.2             
 timm>=1.0
 scikit-learn>=1.4
+transformers>=4.40,<4.47   # PLIP baseline; 5.x disables PyTorch older than 2.5
 
 # Eval / figures
 matplotlib>=3.8

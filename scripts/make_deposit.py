@@ -87,7 +87,14 @@ EXCLUDED_SCRIPTS = {
     "audit_manuscript_numbers.py",
     # Packages paper/latex/ for the journal upload; not part of the analysis.
     "make_submission_zip.py",
+    # Builds the marked-up manuscript; reads paper/ like the two above.
+    "diff_inject_old_labels.py",
 }
+
+# The generated image the earlier Figure 1 was cut from. The figure is now drawn
+# in code from a real patch (scripts/figures/make_fig1.py), and the paper uses no
+# generated image, so the archive does not carry it either.
+EXCLUDED_CODE_FILES = {"scripts/figures/raw/fig1_gen_v3.png"}
 
 # Outputs of the excluded stage-7 scripts. The montage alone is 2.3 MB and no
 # table, figure or claim in the manuscript refers to it.
@@ -106,6 +113,7 @@ def _iter_code_files() -> list[Path]:
                 and p.suffix not in (".pyc", ".pyo")
                 and not any(part in SKIP_DIR_NAMES for part in p.parts)
                 and not (d == "scripts" and p.name in EXCLUDED_SCRIPTS)
+                and p.relative_to(PROJECT_ROOT).as_posix() not in EXCLUDED_CODE_FILES
             ):
                 out.append(p)
     for name in ROOT_FILES:
