@@ -50,8 +50,13 @@ def _tool(name: str) -> str:
 
 
 def members() -> list[Path]:
-    tex = (LATEX / "main.tex").read_text(encoding="utf-8")
-    figs = re.findall(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", tex)
+    # Both documents are compiled from the archive, so the supplement's figures
+    # have to travel too, not only those main.tex includes.
+    figs: list[str] = []
+    for stem in ("main", "supplementary"):
+        tex = (LATEX / f"{stem}.tex").read_text(encoding="utf-8")
+        figs += [f for f in re.findall(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", tex)
+                 if f not in figs]
     files = [LATEX / f for f in STATIC] + [LATEX / f for f in figs]
     files += sorted((LATEX / "bst").glob("*.bst"))
     missing = [str(f) for f in files if not f.exists()]
