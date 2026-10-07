@@ -312,6 +312,11 @@ if (ROOT / "results/plip/summary.json").exists():
 
 # --- text that must be present or gone ----------------------------------------
 present("endpoint named", "api.ai.it.ufl.edu")
+present("code availability version DOI", "10.5281/zenodo.23199902")
+present("code availability concept DOI", "10.5281/zenodo.22245989")
+absent("superseded version DOI cited as current", "the version described here is v3.0")
+cff = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+present("CITATION.cff version DOI", "doi: 10.5281/zenodo.23199902", cff, "CITATION.cff")
 present("gap convention", "computed at full precision and rounded once")
 present("A_AUC estimator", r"\frac{1}{0.99} \int_0^{0.99}")
 for gone in (
