@@ -46,7 +46,7 @@ from scipy.stats import rankdata
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.triage.router import random_routing_curve, risk_coverage_curve
+from src.triage.router import risk_coverage_curve
 
 LP_ROOT = PROJECT_ROOT / "results" / "logprob_confidence"
 MODELS = ("medgemma-27b-it", "gemma-3-27b-it")
@@ -96,8 +96,9 @@ def paired_bootstrap(
         idx = rng.integers(0, n, size=n)
         c = correct[idx]
         a = risk_coverage_curve(sig_a[idx], c, tie_break="expected")["auc"]
+        # Random routing's AUC is the resample's accuracy exactly, so no draws.
         b = (risk_coverage_curve(sig_b[idx], c, tie_break="expected")["auc"]
-             if sig_b is not None else random_routing_curve(c, seed=seed)["auc"])
+             if sig_b is not None else float(c.mean()))
         diffs[i] = a - b
     lo, hi = np.percentile(diffs, [2.5, 97.5])
     return {
@@ -229,17 +230,35 @@ def main() -> int:
                         usable["verbalized_conf"].to_numpy(float)),
                 }
 
-            for src in SOURCES:
+            exact: dict[str, float] = {}
+            for src, col in zip(SOURCES, ("logprob_conf", "verbalized_conf")):
                 s = dict(m[src])
                 if src in occ:
                     s["bin_occupancy"] = occ[src]
+                if ppath.exists():
+                    # run_logprob_confidence.py averaged 200 random tie orders and
+                    # 30 random-routing draws. Every other table uses the closed
+                    # forms, so they replace the run-time values here; those are
+                    # kept for traceability.
+                    y = usable["correct"].to_numpy(bool)
+                    x = usable[col].to_numpy(float)
+                    s["run_time_monte_carlo"] = {
+                        k: s[k] for k in ("selective_accuracy_auc", "random_routing_auc",
+                                          "gap_vs_random")}
+                    aauc = float(risk_coverage_curve(x, y, tie_break="expected")["auc"])
+                    exact[src] = aauc
+                    exact[f"{src}|gap"] = aauc - float(y.mean())
+                    s["selective_accuracy_auc"] = round(aauc, 4)
+                    s["random_routing_auc"] = round(float(y.mean()), 4)
+                    s["gap_vs_random"] = round(exact[f"{src}|gap"], 4)
                 entry[src] = s
 
-            lt, vb = m[SOURCES[0]], m[SOURCES[1]]
+            lt, vb = entry[SOURCES[0]], entry[SOURCES[1]]
             entry["label_token_minus_verbalized"] = {
                 "auroc": round(lt["auroc_midrank"] - vb["auroc_midrank"], 4),
                 "selective_accuracy_auc": round(
-                    lt["selective_accuracy_auc"] - vb["selective_accuracy_auc"], 4),
+                    exact[SOURCES[0]] - exact[SOURCES[1]] if exact
+                    else lt["selective_accuracy_auc"] - vb["selective_accuracy_auc"], 4),
                 "ece": round(lt["ece"] - vb["ece"], 4),
                 "note": "Positive AUROC and AAUC favour the label-token signal.",
             }
@@ -257,11 +276,11 @@ def main() -> int:
                     "verbalized_minus_random": paired_bootstrap(vb_sig, None, correct),
                     "label_token_minus_verbalized": paired_bootstrap(lt_sig, vb_sig, correct),
                 }
+                # Full-precision plug-in differences, rounded once below.
                 plug_in = {
-                    "label_token_minus_random": lt["gap_vs_random"],
-                    "verbalized_minus_random": vb["gap_vs_random"],
-                    "label_token_minus_verbalized":
-                        entry["label_token_minus_verbalized"]["selective_accuracy_auc"],
+                    "label_token_minus_random": exact[f"{SOURCES[0]}|gap"],
+                    "verbalized_minus_random": exact[f"{SOURCES[1]}|gap"],
+                    "label_token_minus_verbalized": exact[SOURCES[0]] - exact[SOURCES[1]],
                 }
                 for cname, point in plug_in.items():
                     c = entry["bootstrap"][cname]

@@ -68,8 +68,7 @@ from src.data.pathmnist import (
     load_split_arrays,
 )
 from src.eval.calibration import ece_score
-from src.models.client import Client
-from src.models.prompts import get_prompt
+from src.models.prompts import get_prompt, get_v3w_variants
 from src.triage.router import random_routing_curve, risk_coverage_curve
 
 logging.basicConfig(
@@ -85,12 +84,21 @@ N_PER_CLASS = 200
 
 
 # ── Prompt variants ───────────────────────────────────────────────────────────
-# Variants differ in framing only; the class list and diagnostic cues are the
-# same across all five. At temperature=0.0 the model is deterministic for each
-# variant, so variation across variants reflects genuine prompt sensitivity.
+# The five variants are separate interventions, not paraphrases. Variant 0 is
+# the base prompt; 1 prepends an architectural-focus instruction; 2 is a
+# V4-style prompt with step-by-step reasoning, alphabetical class order and
+# disambiguation rules, so it differs in instruction structure from the rest;
+# 3 adds a clinical context string; 4 asks for lower confidence under
+# ambiguity. Agreement across them therefore mixes several prompt changes.
+# The V3W family (prompts.get_v3w_variants) is the wording-only control.
+# The variable names below are 1-based and predate the 0-based indexing used in
+# the manuscript.
 
 def _build_variants(base_version: str) -> list[str]:
     """Return K=5 prompt variant strings for the consistency experiment."""
+    if base_version == "V3W":
+        return get_v3w_variants()
+
     base = get_prompt("tissue_classification", version=base_version)
 
     # Variant 2: prepend an architectural focus instruction
@@ -282,6 +290,10 @@ def run_consistency(
     logger.info("Loading %s images...", split)
     val_images, _ = load_split_arrays(split)
     logger.info("%s images loaded: shape=%s", split, val_images.shape)
+
+    # Imported here so the prompt builders above can be imported (by the
+    # round-3 runners' dry runs) on a machine without the openai package.
+    from src.models.client import Client
 
     client = Client(model=model)
     out_dir.mkdir(parents=True, exist_ok=True)

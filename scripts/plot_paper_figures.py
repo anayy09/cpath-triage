@@ -38,12 +38,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.ticker import FormatStrFormatter, MultipleLocator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.eval.calibration import TemperatureScaler
-from src.triage.router import operating_point, random_routing_curve, risk_coverage_curve
+from src.triage.router import operating_point, risk_coverage_curve
 
 ZS = PROJECT_ROOT / "results" / "zeroshot"
 CAL = PROJECT_ROOT / "results" / "calibration"
@@ -59,9 +60,8 @@ def _vlm_curves(model_slug: str, split_tag: str, T: float, seed: int = 42) -> di
     scaler.T = T
     cal_conf = scaler.transform_scalar(raw_conf)
     curve = risk_coverage_curve(cal_conf, correct, tie_break="expected")
-    rnd = random_routing_curve(correct, seed=seed)
     op15 = operating_point(cal_conf, correct, 0.15)
-    return {"curve": curve, "random": rnd, "op15": op15, "n": len(df), "acc": float(correct.mean())}
+    return {"curve": curve, "op15": op15, "n": len(df), "acc": float(correct.mean())}
 
 
 def _cnn_curves(split: str, T: float, seed: int = 42) -> dict:
@@ -77,9 +77,8 @@ def _cnn_curves(split: str, T: float, seed: int = 42) -> dict:
     correct = (pred == labels)
     conf = probs.max(axis=1)
     curve = risk_coverage_curve(conf, correct, tie_break="expected")
-    rnd = random_routing_curve(correct, seed=seed)
     op15 = operating_point(conf, correct, 0.15)
-    return {"curve": curve, "random": rnd, "op15": op15, "n": len(df), "acc": float(correct.mean())}
+    return {"curve": curve, "op15": op15, "n": len(df), "acc": float(correct.mean())}
 
 
 def plot_fullscale_routing() -> Path:
@@ -88,10 +87,12 @@ def plot_fullscale_routing() -> Path:
     cnn_T = json.loads((CAL / "resnet18_64px" / "calibration_params.json").read_text())["T"]
 
     data = {
+        # No CNN on validation: its training and validation patches share slides,
+        # so its validation routing is leakage-inflated and the paper reports CNN
+        # routing on the external cohort only.
         "val": {
             "MedGemma-27b-it": _vlm_curves("medgemma-27b-it", "", mg_T),
             "Gemma-3-27b-it": _vlm_curves("gemma-3-27b-it", "", g3_T),
-            "ResNet-18 64px": _cnn_curves("val", cnn_T),
         },
         "test": {
             "MedGemma-27b-it": _vlm_curves("medgemma-27b-it", "_test", mg_T),
@@ -101,37 +102,51 @@ def plot_fullscale_routing() -> Path:
     }
 
     colors = {"MedGemma-27b-it": "#D65F5F", "Gemma-3-27b-it": "#E8A33D", "ResNet-18 64px": "#4878CF"}
+    # Darker shades for the dashed references, which a pale amber would lose in print.
+    dark = {"MedGemma-27b-it": "#A33A3A", "Gemma-3-27b-it": "#B07415", "ResNet-18 64px": "#2D559B"}
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.8), sharey=False)
     for ax, split in zip(axes, ["val", "test"]):
-        for name, d in data[split].items():
+        # Highest AUC first, so the legend lists models in the order the curves sit.
+        for name, d in sorted(data[split].items(), key=lambda kv: -kv[1]["curve"]["auc"]):
             c = d["curve"]
             budgets = np.array(c["budgets"])
             accs = np.array(c["auto_confirm_acc"], dtype=float)
             valid = ~np.isnan(accs)
+            short = name.split("-27b")[0].split(" 64px")[0]
             ax.plot(budgets[valid], accs[valid], "-", color=colors[name], lw=1.8,
-                     label=f"{name} (AUC={c['auc']:.3f})")
-        # plot one random baseline per panel (CNN's, since it is the tightest/most informative)
-        r = data[split]["ResNet-18 64px"]["random"]
-        rb = np.array(r["budgets"])
-        ra = np.array(r["auto_confirm_acc"], dtype=float)
-        rv = ~np.isnan(ra)
-        ax.plot(rb[rv], ra[rv], "--", color="#888888", lw=1.2, alpha=0.8, label="Random (CNN-64 outcome)")
+                     label=f"{short}, AUC {c['auc']:.3f}")
+            # Random routing confirms prefixes whose expected accuracy is the base
+            # rate at every budget, so each model's reference is a flat line.
+            ax.axhline(d["acc"], color=dark[name], lw=1.1, ls="--",
+                       label=f"{short}, random {d['acc']:.3f}")
         ax.axvline(0.15, color="black", lw=0.9, ls=":", alpha=0.7)
-        ax.annotate("b = 0.15\n(Table 3 operating point)", xy=(0.15, 0.02),
-                    xytext=(0.28, 0.06), fontsize=7.5, color="black",
+        # Anchored to the axes rather than the data, at a height where no curve
+        # runs in that panel. No table number: the manuscript renumbers tables.
+        ann_y = 0.27 if split == "val" else 0.40
+        ax.annotate("b = 0.15\noperating point", xy=(0.15, ann_y - 0.02),
+                    xycoords=("data", "axes fraction"), xytext=(0.22, ann_y),
+                    textcoords=("data", "axes fraction"), fontsize=9, color="black",
                     arrowprops=dict(arrowstyle="->", lw=0.7, color="black"))
         ax.set_xlabel("Fraction routed to specialist (budget b)", fontsize=10)
         ax.set_ylabel("Auto-confirm accuracy", fontsize=10)
-        ax.set_xlim(0, 1)
+        ax.set_xlim(0, 0.99)  # the last budget with a confirmed set, where A_AUC ends
+        ax.yaxis.set_major_locator(MultipleLocator(0.05 if split == "val" else 0.1))
+        ax.yaxis.set_major_formatter(FormatStrFormatter("%.2f"))
+        ax.spines[["top", "right"]].set_visible(False)
         ax.set_title(f"{'Validation (NCT-CRC)' if split == 'val' else 'Test (CRC-VAL-HE-7K)'}", fontsize=11)
-        ax.legend(fontsize=7.5, loc="lower left")
+        ax.text(-0.12, 1.04, "a" if split == "val" else "b", transform=ax.transAxes,
+                fontsize=12, fontweight="bold", va="bottom")
+        # Each panel's empty region, so no curve runs under the legend.
+        if split == "val":
+            ax.legend(fontsize=9, loc="upper right", bbox_to_anchor=(1.0, 0.89), frameon=False)
+        else:
+            ax.legend(fontsize=9, loc="center", bbox_to_anchor=(0.56, 0.64), frameon=False)
 
-    fig.suptitle("Selective-accuracy routing curves (auto-confirm accuracy vs coverage), "
-                 "full-scale calibrated confidence", fontsize=11)
+    # No in-figure title: the caption carries it.
     fig.tight_layout()
     out_path = PROJECT_ROOT / "results" / "routing" / "risk_coverage_fullscale_comparison.png"
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     # Print for verification against Table 3
@@ -139,7 +154,7 @@ def plot_fullscale_routing() -> Path:
     for split in ["val", "test"]:
         for name, d in data[split].items():
             print(f"  {name:20s} {split:5s} AUC={d['curve']['auc']:.4f}  "
-                  f"random_AUC={d['random']['auc']:.4f}  op15={d['op15']['auto_confirm_acc']:.4f}")
+                  f"random_AUC={d['acc']:.4f}  op15={d['op15']['auto_confirm_acc']:.4f}")
     return out_path
 
 

@@ -263,6 +263,101 @@ _V5 = (
 
 _VERSIONS = {"V1": _V1, "V2": _V2, "V3": _V3, "V4": _V4, "V4B": _V4B, "V5": _V5}
 
+# V3W: a wording-only paraphrase family of V3 for the K=5 consistency experiment.
+# The original V3 family mixes interventions (a V4-style structural variant, a
+# clinical context, a confidence instruction), so agreement across it cannot be
+# attributed to rephrasing alone. Each member below keeps V3's instruction
+# content, class names and class order, the same cue content per class, and a
+# byte-identical output-format block, so only the surface wording changes and
+# the parser sees the same response contract. Variant 0 is V3 itself.
+_V3_FORMAT_BLOCK = (
+    "Respond in exactly this format and nothing else:\n"
+    "LABEL: <one tissue type from the list above>\n"
+    "CONFIDENCE: <integer 0-100>\n"
+    "REASONING: <one sentence>"
+)
+
+_V3W_1 = (
+    "You are a specialist in gastrointestinal pathology examining a colorectal "
+    "tissue patch stained with H&E.\n\n"
+    "The tissue types, with the histological cues that usually identify them:\n"
+    "- adipose: big, empty, rounded cells with thin membranes\n"
+    "- background: blank or almost empty glass, with no tissue\n"
+    "- debris: shapeless necrotic material without intact cells\n"
+    "- lymphocytes: closely packed small, round, dark nuclei with little cytoplasm\n"
+    "- mucus: faint, wispy material outside the cells\n"
+    "- smooth muscle: long eosinophilic fibers with cigar-shaped nuclei\n"
+    "- normal colon mucosa: evenly formed crypts and orderly epithelium\n"
+    "- cancer-associated stroma: reactive fibrous tissue surrounding tumor\n"
+    "- colorectal adenocarcinoma epithelium: crowded, irregular malignant glands\n\n"
+    "{clinical_context}\n\n" + _V3_FORMAT_BLOCK
+)
+
+_V3W_2 = (
+    "Acting as an experienced gastrointestinal pathologist, you are looking at a "
+    "patch of colorectal tissue stained with hematoxylin and eosin (H&E).\n\n"
+    "Each tissue type is listed with the cues that typically characterize it "
+    "histologically:\n"
+    "- adipose: cells that are large, rounded and empty, with thin membranes\n"
+    "- background: glass that is white or nearly empty, without tissue\n"
+    "- debris: necrotic material with no defined shape and no intact cells\n"
+    "- lymphocytes: small dark round nuclei packed densely, with sparse cytoplasm\n"
+    "- mucus: extracellular material that is pale and wispy\n"
+    "- smooth muscle: eosinophilic fibers that are elongated, with nuclei shaped like cigars\n"
+    "- normal colon mucosa: crypts that are regular and epithelium that is organized\n"
+    "- cancer-associated stroma: fibrous tissue that is reactive and lies around tumor\n"
+    "- colorectal adenocarcinoma epithelium: malignant glands that are irregular and crowded\n\n"
+    "{clinical_context}\n\n" + _V3_FORMAT_BLOCK
+)
+
+_V3W_3 = (
+    "You are an expert in gastrointestinal pathology, and your task is to analyze "
+    "one H&E-stained patch of colorectal tissue.\n\n"
+    "Typical histological cues for each tissue type:\n"
+    "- adipose: thin membranes around large, empty, round cells\n"
+    "- background: no tissue; the glass is white or close to empty\n"
+    "- debris: no intact cells; amorphous necrotic material\n"
+    "- lymphocytes: scant cytoplasm around dense, small, round, dark nuclei\n"
+    "- mucus: wispy, pale material lying outside cells\n"
+    "- smooth muscle: cigar-shaped nuclei within elongated eosinophilic fibers\n"
+    "- normal colon mucosa: organized epithelium and regular crypts\n"
+    "- cancer-associated stroma: fibrous reactive tissue around a tumor\n"
+    "- colorectal adenocarcinoma epithelium: malignant glands, crowded and irregular\n\n"
+    "{clinical_context}\n\n" + _V3_FORMAT_BLOCK
+)
+
+_V3W_4 = (
+    "As an expert gastrointestinal pathologist, analyze this colorectal tissue "
+    "patch, which is stained with H&E.\n\n"
+    "Below are the tissue types, each followed by the histological cues typical of it:\n"
+    "- adipose: large rounded cells that appear empty, bounded by thin membranes\n"
+    "- background: white or almost blank glass containing no tissue\n"
+    "- debris: amorphous necrotic matter in which no cells are intact\n"
+    "- lymphocytes: densely packed small dark round nuclei with scant cytoplasm\n"
+    "- mucus: pale, wispy material in the extracellular space\n"
+    "- smooth muscle: elongated fibers staining eosinophilic, with cigar-shaped nuclei\n"
+    "- normal colon mucosa: regular crypts and organized epithelium\n"
+    "- cancer-associated stroma: reactive fibrous tissue found around tumor\n"
+    "- colorectal adenocarcinoma epithelium: malignant glands that are crowded and irregular\n\n"
+    "{clinical_context}\n\n" + _V3_FORMAT_BLOCK
+)
+
+_V3W_REWORDINGS = (_V3W_1, _V3W_2, _V3W_3, _V3W_4)
+
+
+def get_v3w_variants(clinical_context: str = "") -> list[str]:
+    """
+    Return the five V3W prompts: V3 itself, then four wording-only rewordings.
+
+    Variant 0 is built through get_prompt so it is byte-identical to the V3
+    prompt used for every full-scale run, which lets it double as a same-session
+    drift probe against earlier V3 calls.
+    """
+    ctx = f"Clinical context: {clinical_context}" if clinical_context else ""
+    return [get_prompt("tissue_classification", version="V3", clinical_context=clinical_context)] + [
+        t.format(clinical_context=ctx) for t in _V3W_REWORDINGS
+    ]
+
 
 def get_prompt(task: str, version: str = "V2", clinical_context: str = "") -> str:
     """

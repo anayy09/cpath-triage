@@ -216,8 +216,14 @@ def main() -> int:
         )
         mc = risk_coverage_curve(conf, correct, tie_break="random",
                                  n_repeats=200, seed=args.seed)
-        rnd_auc = random_routing_curve(correct, seed=args.seed)["auc"]
+        # Random routing confirms prefixes whose expected accuracy is the base rate
+        # at every budget, so its AUC is the base accuracy exactly. The consistency
+        # and label-token tables use this value; a Monte Carlo estimate here left
+        # the Table 6 random column a few thousandths off the Table 3 accuracies.
         base_acc = float(correct.mean())
+        rnd_auc = base_acc
+        rnd_mc = random_routing_curve(correct, seed=args.seed)["auc"]
+        assert abs(rnd_mc - base_acc) < 0.01, f"random-routing MC {rnd_mc} far from {base_acc}"
         ties = tie_statistics(conf)
 
         boot = bootstrap_gap(conf, correct, args.n_boot, args.seed)
