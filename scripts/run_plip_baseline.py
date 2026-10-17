@@ -4,6 +4,10 @@ scripts/run_plip_baseline.py
 A pathology image encoder baseline for the confidence study: PLIP (Huang et al.,
 the vinid/plip checkpoint) zero-shot, and a linear probe on its frozen image
 embeddings. Runs locally on the data machine's GTX 1650; no API calls.
+--model quiltnet runs QuiltNet (Ikezogwo et al., wisdomik/QuiltNet-B-32, a
+ViT-B/32 CLIP trained on pathology image-text pairs from educational videos)
+through exactly the same templates, metrics and probe, so the two image-text
+models are compared on one protocol rather than each on its own.
 
 Why this exists: the VLMs classify by generating text, so a poor zero-shot
 result could mean the model cannot see the tissue or that it sees it and fails
@@ -38,7 +42,7 @@ Design decisions, fixed before any run:
     GTX 1650 and the feature matrix to about 40 MB, while giving each class
     more than 1,000 examples for a probe with 4,617 parameters.
 
-Outputs (results/plip/):
+Outputs (results/plip/ or results/quiltnet/):
     embeddings_{val,test,train_subsample}.npy   cached L2-normalised image embeddings
     train_subsample_idx.npy                     indices into the training split
     predictions_{method}_{split}.parquet        per-patch label, prediction, confidence
@@ -48,6 +52,7 @@ Outputs (results/plip/):
 Usage:
     python scripts/run_plip_baseline.py --dry-run
     python scripts/run_plip_baseline.py [--batch-size 128] [--seed 42] [--revision main]
+    python scripts/run_plip_baseline.py --model quiltnet
 """
 
 from __future__ import annotations
@@ -68,8 +73,20 @@ from src.data.pathmnist import EXPECTED_SIZES, LABEL_NAMES
 
 logger = logging.getLogger("plip_baseline")
 
-MODEL_ID = "vinid/plip"
-OUT_DIR = PROJECT_ROOT / "results" / "plip"
+# Both checkpoints ship a Hugging Face CLIPModel config, so one loader serves both.
+MODELS = {
+    "plip": ("vinid/plip", PROJECT_ROOT / "results" / "plip"),
+    "quiltnet": ("wisdomik/QuiltNet-B-32", PROJECT_ROOT / "results" / "quiltnet"),
+}
+MODEL_ID, OUT_DIR = MODELS["plip"]
+# The QuiltNet repository also holds open_clip and DINO checkpoints the loader never
+# reads; fetching only the CLIPModel files keeps the download to about 600 MB.
+# PLIP keeps its original unfiltered download so its cached snapshot is reused.
+ALLOW_PATTERNS = {
+    "wisdomik/QuiltNet-B-32": ["config.json", "pytorch_model.bin", "preprocessor_config.json",
+                               "tokenizer.json", "tokenizer_config.json", "vocab.json",
+                               "merges.txt", "special_tokens_map.json"],
+}
 SEED = 42
 N_BOOT = 1000
 N_BINS = 15
@@ -107,7 +124,8 @@ def load_model(revision: str) -> tuple[object, object, object, dict]:
     from huggingface_hub import snapshot_download
     from transformers import CLIPModel, CLIPProcessor
 
-    local_dir = Path(snapshot_download(MODEL_ID, revision=revision))
+    local_dir = Path(snapshot_download(MODEL_ID, revision=revision,
+                                       allow_patterns=ALLOW_PATTERNS.get(MODEL_ID)))
     # snapshot_download returns .../snapshots/<commit>, so the directory name is the pin.
     commit = local_dir.name
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -334,7 +352,8 @@ def dry_run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="PLIP zero-shot and linear-probe baseline")
+    parser = argparse.ArgumentParser(description="PLIP or QuiltNet zero-shot and linear-probe baseline")
+    parser.add_argument("--model", choices=sorted(MODELS), default="plip")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--n-boot", type=int, default=N_BOOT)
@@ -344,6 +363,8 @@ def main() -> int:
                         help="Hugging Face revision; pass the commit hash from run_meta.json to rerun")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    global MODEL_ID, OUT_DIR
+    MODEL_ID, OUT_DIR = MODELS[args.model]
 
     if args.dry_run:
         return dry_run(args)
@@ -421,7 +442,7 @@ def main() -> int:
     summary_path = OUT_DIR / "summary.json"
     summary_path.write_text(json.dumps({
         "note": ("Zero-shot rows involve no training on either cohort for this task; whether "
-                 "PLIP's pretraining images overlap these cohorts is not known. Probe validation "
+                 f"{MODEL_ID}'s pretraining images overlap these cohorts is not known. Probe validation "
                  "rows share slides "
                  "with the probe's training patches and are flagged leakage_inflated; only the "
                  "external (test) probe rows are reportable."),

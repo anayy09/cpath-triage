@@ -10,8 +10,8 @@ normal-approximation p value from its bootstrap: est / SE, where SE is the
 bootstrap standard deviation when the artifact stores it and otherwise the 95%
 interval width divided by 2 x 1.96. Holm's step-down procedure then controls the
 family-wise error rate at 0.05. Family members whose artifacts do not exist yet
-(the V3W and pixel-shuffle runs, done on the machine that holds the images) are
-listed as pending and enter the family once their outputs are present, so the
+(runs done on the machine that holds the images, such as the external V3W run
+added before it ran) are listed as pending and enter the family once their outputs are present, so the
 family is declared once and never chosen after the fact.
 
 No API calls. Output: results/multiplicity/holm.json.
@@ -103,6 +103,11 @@ def _family() -> list[tuple[str, str, Path, object]]:
          "V3W wording-only paraphrase agreement minus random, cohort-weighted, validation",
          CONS / "V3W" / wr,
          lambda: _cons("V3W", wr, "weighted_cohort", "contrasts", "consistency_minus_random")),
+        # Declared 2026-10-16, before the external V3W run; pending until its output exists.
+        ("v3w_consistency_vs_random_test",
+         "V3W wording-only paraphrase agreement minus random, cohort-weighted, external",
+         CONS / "V3W_test" / wr,
+         lambda: _cons("V3W_test", wr, "weighted_cohort", "contrasts", "consistency_minus_random")),
         ("shuffle_consistency_vs_random_val",
          "Agreement on pixel-shuffled patches minus random, cohort-weighted, validation",
          CONS / "controls" / "summary.json",

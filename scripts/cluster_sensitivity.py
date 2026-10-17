@@ -176,16 +176,19 @@ def main() -> int:
             label = f"{pretty} ({split})"
             findings[label] = analyse(label, c["gap_point"], c["ci_2.5"], c["ci_97.5"], m, nc)
 
-    # The wording-only family (V3W) reuses the validation selection; it joins the
-    # table once its weighted analysis exists, so the row set is fixed in advance.
-    v3w = cons_root / "V3W" / wr
-    if v3w.exists():
-        c = _load(v3w)["weighted_cohort"]["contrasts"]["consistency_minus_random"]
-        label = "Wording-only (V3W) consistency minus random (val)"
-        findings[label] = analyse(label, c["gap_point"], c["ci_2.5"], c["ci_97.5"],
-                                  m_subset_val, N_SLIDES_TRAIN_VAL)
-    else:
-        print(f"V3W row pending: {v3w} not found", file=sys.stderr)
+    # The wording-only family (V3W) reuses each split's V3 selection; its rows join
+    # the table once their weighted analysis exists, so the row set is fixed in advance.
+    for sub, split, m, nc in (
+        ("V3W", "val", m_subset_val, N_SLIDES_TRAIN_VAL),
+        ("V3W_test", "test", m_subset_test, N_SLIDES_TEST),
+    ):
+        v3w = cons_root / sub / wr
+        if v3w.exists():
+            c = _load(v3w)["weighted_cohort"]["contrasts"]["consistency_minus_random"]
+            label = f"Wording-only (V3W) consistency minus random ({split})"
+            findings[label] = analyse(label, c["gap_point"], c["ci_2.5"], c["ci_97.5"], m, nc)
+        else:
+            print(f"V3W row pending: {v3w} not found", file=sys.stderr)
 
     # Label-token comparison (Table S2), on its own subsamples: 2,001 validation
     # patches (the held-out evaluation partition) and 2,000 external patches.

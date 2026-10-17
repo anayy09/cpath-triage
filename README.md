@@ -2,7 +2,7 @@
 
 Code and prediction artifacts for a diagnostic study of **verbalized confidence** in an open medical vision-language model, evaluated on colorectal H&E histopathology patches.
 
-The question is narrow: when MedGemma-27b-it writes an integer confidence next to a tissue label, does that number carry enough information about correctness to drive selective prediction? For the prompt we selected, it does not. Its base model Gemma-3-27b-it, given the identical prompt, produces a confidence that does route above random. Agreement across five prompt variants routes where MedGemma's stated number does not, and so does agreement across five paraphrases that change only the wording, though its external margins over confidence do not survive a plausible within-slide correlation.
+The question is narrow: when MedGemma-27b-it writes an integer confidence next to a tissue label, does that number carry enough information about correctness to drive selective prediction? For the prompt we selected, it does not. Its base model Gemma-3-27b-it, given the identical prompt, produces a confidence that does route above random. Agreement across five prompt variants routes where MedGemma's stated number does not, mostly because one restructured variant departs from the rest, and that variant's own stated confidence ranks as well. Agreement across five paraphrases that change only the wording routes on validation and less than half as well on the external cohort, and the external margins of agreement over confidence do not survive a plausible within-slide correlation.
 
 This is not a proposal for a deployable triage system. Zero-shot accuracy here is 40.2% (MedGemma) and 35.6% (Gemma-3) on nine classes, so neither model is usable as a standalone classifier, and the repository contains no system anyone should deploy. What it contains is the measurement of a confidence signal, the routing analysis that follows from it, and the artifacts needed to check both.
 
@@ -36,7 +36,7 @@ Every table and figure below regenerates from `results/`, which holds the saved 
 | 7 | Cross-cohort accuracy and F1, VLMs | `scripts/cross_center_scalings.py`, `scripts/classification_stats.py` | `results/stage6/cross_center_scalings.json` |
 | 8 | K=5 routing signals, cohort-weighted and subset | `scripts/consistency_population.py --split {val,test}` | `results/consistency/medgemma-27b-it/{V3,V3_test}/{weighted_routing,confusability_valweights}.json` |
 | 9 | K=5 paired contrasts, with the Holm outcome | `scripts/consistency_population.py --split {val,test}` | `.../{weighted_routing,fixed_outcome,confusability_valweights}.json` |
-| 10 | Agreement with each variant left out; V3W | `scripts/consistency_population.py` (V3W: `--version V3W --selection-from V3 --split val`) | `.../{V3,V3_test,V3W}/leave_variant_out.json`, `.../V3W/weighted_routing.json` |
+| 10 | Agreement with each variant left out; V3W | `scripts/consistency_population.py` (V3W: `--version V3W --selection-from V3 --split {val,test}`) | `.../{V3,V3_test,V3W,V3W_test}/leave_variant_out.json`, `.../{V3W,V3W_test}/weighted_routing.json` |
 
 The inclusion weights behind Tables 8 to 10 come from `scripts/consistency_selection_weights.py`, which reconstructs the stratified selection and checks that it reproduces the stored patch indices. Accuracy by agreement level and the V5 family come from `scripts/consistency_secondary_weighted.py`.
 
@@ -49,8 +49,17 @@ The inclusion weights behind Tables 8 to 10 come from `scripts/consistency_selec
 | Tables S3, S4 | Pilot sample flow; validation headlines without the pilot | `scripts/sample_flow.py`, `scripts/consistency_population.py` | `results/data/{sample_flow,pilot_excluded_headlines}.json`, `.../V3/pilot_excluded.json` |
 | Table S5 | Label-token comparisons by number of classes returned | `scripts/logprob_censoring_sensitivity.py` | `results/logprob_confidence/censoring_sensitivity.json` |
 | Table S6 | Holm adjustment over the declared family | `scripts/multiplicity_holm.py` | `results/multiplicity/holm.json` |
-| Table S7 | PLIP zero-shot and linear-probe baseline | `scripts/run_plip_baseline.py` (local GPU, about 25 min on a GTX 1650; `transformers<4.47`) | `results/plip/summary.json`, `results/plip/predictions_*.parquet` |
-| Figure S1 | Binary NLL against temperature | `scripts/temperature_nll_curve.py` | `results/calibration/nll_curve.{json,pdf}` |
+| Table S7 | PLIP and QuiltNet zero-shot and linear-probe baselines | `scripts/run_plip_baseline.py [--model quiltnet]` (local GPU, about 25 to 30 min each on a GTX 1650; `transformers<4.47`) | `results/{plip,quiltnet}/summary.json`, `results/{plip,quiltnet}/predictions_*.parquet` |
+| Table S8 | Calibration maps beyond temperature scaling, with the Brier decomposition | `scripts/calibration_alternatives.py` | `results/calibration/calibration_alternatives.json` |
+| Table S9 | Each prompt variant's own stated confidence, cohort-weighted | `scripts/variant_confidence_weighted.py` | `results/consistency/medgemma-27b-it/variant_confidence_weighted.json` |
+| Table S10 | Agreement against the number of prompts K | `scripts/k_ablation.py` | `results/consistency/medgemma-27b-it/k_ablation.json` |
+| Table S11 | Operating points at 10, 20 and 30% budgets, query cost | `scripts/budget_cost_table.py` | `results/routing/budget_cost_table.json` |
+| Table S12 | Per-class F1 under each pilot prompt | `scripts/pilot_per_class.py` | `results/zeroshot/medgemma-27b-it/pilot_per_class.json` |
+| Table S13 | Inference configuration | (settings in `src/models/client.py`; run windows in each `run_meta.json`) | |
+| Figure S1 | Binary NLL against temperature; clip sensitivity | `scripts/temperature_nll_curve.py`, `scripts/nll_clip_sensitivity.py` | `results/calibration/nll_curve.{json,pdf}`, `results/calibration/nll_clip_sensitivity.json` |
+| Figure S2 | Patches MedGemma labelled smooth muscle, by true class | `scripts/figures/make_error_montage.py` (needs PathMNIST; reads 20 patches) | `paper/latex/figures/figS_error_montage.{pdf,png}`, `results/figures/error_montage_indices.json` |
+
+The table bodies of S6 and S8 to S12 are generated, not typed, by `scripts/supplement_tables.py` into `results/supplement/generated_tables.tex`.
 
 The image controls reported in Section 4.5 are summarized by `scripts/analyze_image_controls.py` into `results/consistency/medgemma-27b-it/controls/summary.json`. Supporting analyses that appear only in the prose: `scripts/confidence_information.py` (confidence-correctness AUROC, mutual information with a permutation null, confidence by predicted class), `scripts/verify_calibration_claims.py` (the T = 200 bound identities) and `scripts/parse_failure_check.py` (Gemma-3's eight off-list answers and how each artifact treats them). `scripts/verify_partitions.py` establishes that the 64 px and 224 px releases index the same patches and that no slide or patient identifier exists in the distributed archives, which is why Table S1 is a sensitivity analysis rather than a cluster bootstrap.
 
@@ -64,9 +73,9 @@ The image controls reported in Section 4.5 are summarized by `scripts/analyze_im
 | 4 | MedGemma reliability diagrams | `scripts/calibrate.py --full-scale` | `results/calibration/medgemma-27b-it/V3_full/reliability_combined.png` |
 | 5 | Gemma-3 reliability diagrams | `scripts/calibrate.py --full-scale --vlm-model gemma-3-27b-it` | `results/calibration/gemma-3-27b-it/V3_full/reliability_combined.png` |
 | 6 | Selective-accuracy routing curves | `scripts/plot_paper_figures.py` | `results/routing/risk_coverage_fullscale_comparison.png` |
-| 7 | Consistency routing curves, 1,800-patch subset | `scripts/consistency_routing_table.py` | `results/consistency/medgemma-27b-it/V3/routing_curves_tie_expectation.png` |
+| 7 | Consistency routing curves, 1,800-patch subset | `scripts/plot_paper_figures.py` | `results/consistency/medgemma-27b-it/V3/routing_curves_paper.png` |
 
-Figure 1 is drawn in code from a real validation patch (PathMNIST index 6404, CC BY 4.0); no generative tool is involved. Every other manuscript figure file is a copy of its artifact, and none needs a billed call or a GPU to redraw.
+Figure 1 is drawn in code from a real validation patch (PathMNIST index 6404, CC BY 4.0); no generative tool is involved. Every other manuscript figure file is a copy of its artifact, and none needs a billed call or a GPU to redraw; Figure S2 reads 20 patches from PathMNIST.
 
 ### Order of execution
 
@@ -92,11 +101,20 @@ for s in val test; do
   python scripts/consistency_population.py --split $s
   python scripts/consistency_routing_table.py --split $s
 done
-python scripts/consistency_population.py --version V3W --selection-from V3 --split val
+for s in val test; do
+  python scripts/consistency_population.py --version V3W --selection-from V3 --split $s
+done
 python scripts/consistency_secondary_weighted.py
 python scripts/analyze_image_controls.py
+python scripts/variant_confidence_weighted.py
+python scripts/k_ablation.py
+python scripts/calibration_alternatives.py
+python scripts/nll_clip_sensitivity.py
+python scripts/budget_cost_table.py
+python scripts/pilot_per_class.py
 python scripts/cluster_sensitivity.py
 python scripts/multiplicity_holm.py
+python scripts/supplement_tables.py
 python scripts/plot_paper_figures.py
 python scripts/replot_saved_figures.py
 ```

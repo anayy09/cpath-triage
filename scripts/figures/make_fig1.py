@@ -112,8 +112,10 @@ def draw(final: bool) -> plt.Figure:
     px, ps = 4.0, 24.0
     py = MID - ps / 2
     if have_patch:
+        # interpolation="none" makes the PDF embed the 224 px patch unresampled; any
+        # other mode resamples it to the figure dpi, which at 24 mm is about 95 px.
         ax.imshow(mpimg.imread(PATCH_PATH), extent=(px, px + ps, py, py + ps),
-                  interpolation="lanczos", zorder=2)
+                  interpolation="none", zorder=2)
     else:
         ax.add_patch(Rectangle((px, py), ps, ps, facecolor="#D9D9D9", edgecolor="none"))
         _text(ax, px + ps / 2, py + ps / 2, "real patch\ninserted on\ndata machine",

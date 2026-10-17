@@ -36,16 +36,19 @@ keywords:
   - verbalized confidence
   - uncertainty quantification
   - colorectal
-version: v4.0
-date-released: 2026-10-07
-doi: 10.5281/zenodo.23199902
+version: v5.0
+date-released: 2026-10-17
+doi: 10.5281/zenodo.23441371
 identifiers:
   - type: doi
     value: 10.5281/zenodo.22245989
     description: Concept DOI, resolving to the most recent version of this record.
   - type: doi
+    value: 10.5281/zenodo.23441371
+    description: Version DOI for v5.0, the release described in the manuscript. Adds the wording-only family on the external cohort, each prompt variant's own confidence, further calibration maps, agreement against the number of prompts, operating points with query cost, per-class results under each pilot prompt, the QuiltNet baseline and the per-call logs.
+  - type: doi
     value: 10.5281/zenodo.23199902
-    description: Version DOI for v4.0, the release described in the manuscript. Adds the cohort-weighted re-analysis of the K=5 subsets, the wording-only prompt family, the image controls and the PLIP baseline.
+    description: Version DOI for v4.0, superseded. Adds the cohort-weighted re-analysis of the K=5 subsets, the wording-only prompt family on validation, the image controls and the PLIP baseline.
   - type: doi
     value: 10.5281/zenodo.22928010
     description: Automatic GitHub snapshot of the v3.0 tag, code only, without the prediction artifacts.
