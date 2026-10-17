@@ -15,7 +15,8 @@ What goes in, and why.
   Code                Everything a reader needs to rerun the analysis: src,
                       scripts, tests, requirements, lint config, .env.example.
   Prediction
-  artifacts           Every .json, .parquet, .png, .md and .txt under results/.
+  artifacts           Every .json, .jsonl, .parquet, .png, .md, .txt and .tex
+                      under results/.
                       About 13 MB. These are what make the deposit reproducible:
                       with them, all twelve tables and eight of the nine figures
                       regenerate with no API calls and no GPU. Without them a
@@ -67,7 +68,10 @@ ROOT_FILES = (
     "ruff.toml",
     ".env.example",
 )
-RESULTS_SUFFIXES = {".json", ".parquet", ".png", ".md", ".txt"}
+# .jsonl carries the per-call logs (timestamps, tokens, latency) that the query-cost
+# table reads and the inference-configuration table points to; .tex carries the
+# supplementary table bodies generated from the result files.
+RESULTS_SUFFIXES = {".json", ".jsonl", ".parquet", ".png", ".md", ".txt", ".tex"}
 CHECKPOINT_SUFFIX = ".pt"
 SKIP_DIR_NAMES = {"__pycache__", ".ipynb_checkpoints"}
 
