@@ -310,6 +310,97 @@ if (ROOT / "results/plip/summary.json").exists():
         fails.append("PLIP probe: leakage flags are not val-only")
     present("Table S7 in supplement", "label{tab:plip}", supp, "supplementary.tex")
 
+# --- Round 4: per-variant confidence, calibration maps, K, budgets, clip ---------
+vcw = load(f"{CONS}/variant_confidence_weighted.json")["runs"]
+for run, split in (("V3", "val"), ("V3_test", "test")):
+    v2 = vcw[run]["variants"]["variant_2"]
+    present(f"4.5 variant 2 gap {split}", gap_string(v2["cohort_gap_vs_random"]))
+    lo, hi = v2["cohort_auroc_ci"]
+    present(f"4.5 variant 2 AUROC {split}", f"{v2['cohort_auroc']:.3f} [{lo:.3f}, {hi:.3f}]")
+    present(f"4.5 variant 2 accuracy {split}", f"{100 * v2['cohort_accuracy']:.1f}\\%")
+present("4.5 V5 single-query gap", gap_string(vcw["V5"]["variants"]["variant_0"]["cohort_gap_vs_random"]))
+present("4.5 V3W worst paraphrase", gap_string(vcw["V3W"]["variants"]["variant_3"]["cohort_gap_vs_random"]))
+near("4.5 V5 variant 2 AUROC", vcw["V5"]["variants"]["variant_2"]["cohort_auroc"], 0.620)
+
+cal = load("results/calibration/calibration_alternatives.json")["models"]
+mg, g3 = cal["medgemma-27b-it"], cal["gemma-3-27b-it"]
+near("4.2 Platt ECE", mg["eval"]["platt"]["ece"], 0.006)
+near("4.2 isotonic ECE", mg["eval"]["isotonic"]["ece"], 0.005)
+near("4.2 MedGemma isotonic Brier", mg["eval"]["isotonic"]["brier"], 0.239)
+near("4.2 MedGemma constant Brier", mg["eval"]["constant"]["brier"], 0.240)
+near("4.2 Platt slope", mg["params"]["platt_slope"], -0.024)
+near("4.2 MedGemma resolution", mg["eval"]["raw"]["brier_decomposition"]["resolution"], 0.0007, nd=4)
+near("4.2 MedGemma external Platt Brier", mg["external"]["platt"]["brier"], 0.231)
+near("4.2 MedGemma external isotonic Brier", mg["external"]["isotonic"]["brier"], 0.228)
+near("4.2 MedGemma external constant Brier", mg["external"]["constant"]["brier"], 0.229)
+near("4.2 Gemma-3 isotonic Brier", g3["eval"]["isotonic"]["brier"], 0.200)
+near("4.2 Gemma-3 constant Brier", g3["eval"]["constant"]["brier"], 0.230)
+near("4.2 Gemma-3 external isotonic Brier", g3["external"]["isotonic"]["brier"], 0.186)
+near("4.2 Gemma-3 external constant Brier", g3["external"]["constant"]["brier"], 0.216)
+near("4.2 Gemma-3 resolution", g3["eval"]["raw"]["brier_decomposition"]["resolution"], 0.030)
+
+kab = load(f"{CONS}/k_ablation.json")["splits"]["val"]
+for k, printed in (("2", 0.070), ("3", 0.090), ("4", 0.102)):
+    near(f"4.5 K ablation V3 K={k}", kab["V3"]["by_k"][k]["mean_gap"], printed)
+near("4.5 K ablation pooled K=9", kab["pooled"]["by_k"]["9"]["mean_gap"], 0.124)
+near("4.5 K ablation pooled K=8 without variant 2", kab["pooled"]["by_k"]["8"]["mean_gap_without_variant_2"], 0.067)
+near("4.5 K ablation V3W K=2", kab["V3W"]["by_k"]["2"]["mean_gap"], 0.063)
+kab_ext = load(f"{CONS}/k_ablation.json")["splits"]["test"]
+near("4.5 K ablation external pooled K=9", kab_ext["pooled"]["by_k"]["9"]["mean_gap"], 0.062)
+near("4.5 K ablation external pooled K=8 without variant 2",
+     kab_ext["pooled"]["by_k"]["8"]["mean_gap_without_variant_2"], -0.017)
+v3w_ext_k = [kab_ext["V3W"]["by_k"][k]["mean_gap"] for k in ("2", "3", "4", "5")]
+near("4.5 K ablation external V3W min", min(v3w_ext_k), 0.036)
+near("4.5 K ablation external V3W max", max(v3w_ext_k), 0.049)
+near("4.5 K ablation without variant 2 K=2", kab["V3"]["by_k"]["2"]["mean_gap_without_variant_2"], 0.023)
+near("4.5 K ablation without variant 2 K=4", kab["V3"]["by_k"]["4"]["mean_gap_without_variant_2"], 0.033)
+
+bud = load("results/routing/budget_cost_table.json")["rows"]
+for b, printed in (("0.10", 42.5), ("0.20", 44.2), ("0.30", 45.4)):
+    near(f"4.5 agreement at budget {b}", 100 * bud["MedGemma V3 agreement|val"]["auto_confirm_accuracy"][b], printed, nd=1)
+near("4.5 Gemma-3 budget gain val low", 100 * (bud["gemma-3-27b-it verbalized|val"]["auto_confirm_accuracy"]["0.10"]
+                                                - bud["gemma-3-27b-it verbalized|val"]["base_accuracy"]), 3.7, nd=1)
+near("4.5 Gemma-3 budget gain val high", 100 * (bud["gemma-3-27b-it verbalized|val"]["auto_confirm_accuracy"]["0.30"]
+                                                 - bud["gemma-3-27b-it verbalized|val"]["base_accuracy"]), 9.5, nd=1)
+
+clip = load("results/calibration/nll_clip_sensitivity.json")["models"]["medgemma-27b-it"]
+present("3.3 confidences at 100", f"{clip['n_at_100']} of MedGemma's 8,003")
+near("3.3 NLL at T=1 with clip 1e-2", clip["by_clip"]["0.01"]["nll_T1"], 1.844)
+checks += 1
+if not all(r["sufficient_condition_holds"] and r["monotone_decreasing_on_grid"] for r in clip["by_clip"].values()):
+    fails.append("3.3 clip sensitivity: condition or monotonicity fails for some clip")
+
+v3w_ext = load(f"{CONS}/V3W_test/weighted_routing.json")["weighted_cohort"]["contrasts"]
+present("4.5 V3W external gap", gap_string(v3w_ext["consistency_minus_random"]))
+present("4.5 V3W external vs averaged confidence", gap_string(v3w_ext["consistency_minus_mean5_conf"]))
+present("4.5 V3W external voting gain", gap_string(v3w_ext["voting_gain_accuracy"]))
+present("Table 10 V3W external", "$+0.041$ [0.024, 0.060] \\\\")
+lvo_ext = load(f"{CONS}/V3W_test/leave_variant_out.json")["weighted_cohort"]["contrasts"]
+drops = [lvo_ext[f"drop_{k}:consistency_minus_random"]["exact"]["gap_point"] for k in range(5)]
+exact("4.5 V3W external leave-one-out min", min(drops), 0.025)
+exact("4.5 V3W external leave-one-out max", max(drops), 0.059)
+holm_fam = load("results/multiplicity/holm.json")
+checks += 1
+if holm_fam["family_size_present"] != 19 or holm_fam["n_pending"] != 0:
+    fails.append("Holm family is not the declared 19 with none pending")
+present("Holm family size in Methods", "rest on 19 contrasts")
+present("Table S1 V3W external row", "V3W consistency $-$ random (test) & 72 & $+0.041$", supp, "supplementary.tex")
+
+qn = load("results/quiltnet/summary.json")
+for split, acc, auroc, gap in (("val", 52.7, 0.672, 0.148), ("test", 50.4, 0.684, 0.165)):
+    r = qn["zeroshot_ensemble"][split]
+    near(f"4.3 QuiltNet accuracy {split}", 100 * r["accuracy"], acc, nd=1)
+    near(f"4.3 QuiltNet AUROC {split}", r["auroc"], auroc)
+    near(f"4.3 QuiltNet gap {split}", r["gap_point"], gap)
+    near(f"4.3 QuiltNet gap lo {split}", r["gap_bootstrap"]["ci_2.5"], {"val": 0.141, "test": 0.156}[split])
+    near(f"4.3 QuiltNet gap hi {split}", r["gap_bootstrap"]["ci_97.5"], {"val": 0.156, "test": 0.173}[split])
+near("4.3 QuiltNet probe accuracy", 100 * qn["probe"]["test"]["accuracy"], 95.4, nd=1)
+present("4.3 QuiltNet commit", "8ce7728")
+
+pilot = load("results/zeroshot/medgemma-27b-it/pilot_per_class.json")["versions"]
+near("5.1 NORM F1 under V2", pilot["V2"]["per_class"]["NORM"]["f1"], 0.61, nd=2)
+near("5.1 NORM F1 under V4B", pilot["V4B"]["per_class"]["NORM"]["f1"], 0.53, nd=2)
+
 # --- text that must be present or gone ----------------------------------------
 present("endpoint named", "api.ai.it.ufl.edu")
 present("code availability version DOI", "10.5281/zenodo.23199902")
@@ -331,6 +422,21 @@ for gone in (
     "scored as incorrect rather than excluded",
     "lets us isolate what medical fine-tuning does",
     "the signal we end up recommending",
+    "$+0.114$ on both splits",
+    "by $+0.105$ to $+0.132$",
+    "the loss happens in verbalization",
+    "label-token signal is the better one",
+    "faithful readout",
+    "once every class is scored",
+    "where all nine were scored",
+    "Medical Tuning and the Accuracy Gap",
+    "a perfect selective predictor approaches 1",
+    "shaded random band",
+    "better than both VLMs on both counts",
+    "between VLMs and supervised baselines at the level of accuracy",
+    "the degeneracy sits in how the model verbalizes",
+    "most fragile entry in this block: it",
+    "The failure is specific to a prompt",
 ):
     absent("stale", gone)
     absent("stale", gone, supp, "supplementary.tex")

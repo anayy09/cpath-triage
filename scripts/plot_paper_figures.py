@@ -223,9 +223,65 @@ def plot_cross_center_bars() -> Path:
     return out_path
 
 
+def plot_consistency_routing() -> Path:
+    """
+    Unweighted routing curves on the 1,800-patch validation K=5 subset, for the
+    subset column of the consistency signal table. Every signal routes the modal
+    vote's correctness, so one flat reference at the modal accuracy serves all.
+    """
+    df = pd.read_parquet(PROJECT_ROOT / "results" / "consistency" / "medgemma-27b-it" / "V3"
+                         / "predictions.parquet")
+    correct = (df["modal_label"] == df["true_label_name"]).to_numpy(bool)
+    base = float(correct.mean())
+    signals = {
+        "Consistency score": (df["consistency_score"].to_numpy(float), "#D65F5F"),
+        "Mean confidence, K = 5": (df["mean_textual_conf"].to_numpy(float), "#4878CF"),
+    }
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    aucs = {}
+    for name, (conf, color) in signals.items():
+        c = risk_coverage_curve(conf, correct, tie_break="expected")
+        aucs[name] = c["auc"]
+        budgets = np.array(c["budgets"])
+        accs = np.array(c["auto_confirm_acc"], dtype=float)
+        valid = ~np.isnan(accs)
+        ax.plot(budgets[valid], accs[valid], "-", color=color, lw=1.8,
+                label=f"{name}, AUC {c['auc']:.3f}")
+    # Random routing has the base accuracy at every budget in expectation, so its
+    # AUC is that accuracy exactly and the reference is a flat line.
+    ax.axhline(base, color="#555555", lw=1.1, ls="--", label=f"Random, AUC {base:.3f}")
+    ax.axvline(0.15, color="black", lw=0.9, ls=":", alpha=0.7)
+    ax.annotate("b = 0.15", xy=(0.15, 0.62), xycoords=("data", "axes fraction"),
+                xytext=(0.19, 0.62), textcoords=("data", "axes fraction"), fontsize=9,
+                va="center", arrowprops=dict(arrowstyle="->", lw=0.7, color="black"))
+    ax.set_xlim(0, 0.99)
+    ax.set_ylim(0, 0.8)
+    ax.yaxis.set_major_locator(MultipleLocator(0.1))
+    ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
+    ax.set_xlabel("Fraction routed to specialist (budget b)", fontsize=10)
+    ax.set_ylabel("Auto-confirm accuracy", fontsize=10)
+    ax.spines[["top", "right"]].set_visible(False)
+    # Right of the operating-point line, above where the curves run.
+    ax.legend(fontsize=9, loc="upper left", bbox_to_anchor=(0.2, 1.0), frameon=False)
+    fig.tight_layout()
+    out_path = (PROJECT_ROOT / "results" / "consistency" / "medgemma-27b-it" / "V3"
+                / "routing_curves_paper.png")
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print("\nConsistency figure verification against the signal table's subset column:")
+    for name, auc in aucs.items():
+        print(f"  {name:24s} AUC={auc:.4f}")
+    print(f"  {'Random (modal outcome)':24s} AUC={base:.4f}")
+    return out_path
+
+
 def main() -> int:
     p1 = plot_fullscale_routing()
     print(f"\nSaved: {p1}")
+    p3 = plot_consistency_routing()
+    print(f"Saved: {p3}")
     p2 = plot_cross_center_bars()
     print(f"Saved: {p2}")
     return 0

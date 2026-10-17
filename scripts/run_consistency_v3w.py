@@ -3,14 +3,14 @@ scripts/run_consistency_v3w.py
 
 K=5 consistency run under the V3W family: the V3 prompt plus four wording-only
 rewordings of it (src/models/prompts.get_v3w_variants; texts and notes in
-docs/V3W_PARAPHRASES.md). Billed: 1,800 patches x 5 variants = 9,000 calls.
+docs/V3W_PARAPHRASES.md). Billed: 1,800 patches x 5 variants = 9,000 calls per split.
 
 Why this exists: the original V3 family mixes several interventions (a
 V4-style structural variant, a clinical context, a confidence instruction), so
 agreement across it cannot be attributed to rephrasing. V3W changes wording only.
 
-The patch set is read from the stored V3 run rather than reselected, so the two
-runs cover the same 1,800 validation patches in the same order and can be
+The patch set is read from the stored V3 run of the same split rather than
+reselected, so the two runs cover the same 1,800 patches in the same order and can be
 compared patch by patch. Variant 0 is the unmodified V3 prompt, which makes it a
 same-session drift probe against the stored V3 variant-0 labels.
 
@@ -21,7 +21,7 @@ re-running the same command resumes. predictions.parquet is written only once
 every call is logged, in the format of the V3 run, so
 scripts/consistency_routing_table.py --version V3W reads it unchanged.
 
-Outputs (results/consistency/{model}/V3W/):
+Outputs (results/consistency/{model}/V3W/ for validation, V3W_test/ for the external split):
     calls.jsonl          one line per completed call
     predictions.parquet  per-patch K=5 summary, V3 format
     metrics.json         written by run_consistency._compute_and_save_metrics
@@ -31,6 +31,7 @@ Usage:
     python scripts/run_consistency_v3w.py --dry-run
     python scripts/run_consistency_v3w.py
     python scripts/run_consistency_v3w.py --limit 4      # smoke test, 20 calls
+    python scripts/run_consistency_v3w.py --split test    # external cohort, V3_test patches
 """
 
 from __future__ import annotations
@@ -96,9 +97,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", default=None)
     parser.add_argument("--seed", type=int, default=42, help="Logged only; patch set and prompts are fixed.")
+    parser.add_argument("--split", choices=["val", "test"], default="val")
     parser.add_argument(
         "--patches-from", type=Path, default=None,
-        help="Stored K=5 predictions whose patch list is reused (default: the V3 validation run).",
+        help="Stored K=5 predictions whose patch list is reused (default: the V3 run of --split).",
     )
     parser.add_argument("--limit", type=int, default=None, help="Only the first N patches (smoke test).")
     parser.add_argument("--dry-run", action="store_true", help="Print counts, prompts and paths; no data, no API.")
@@ -111,8 +113,10 @@ def main() -> int:
 
     model = args.model or os.environ.get("MEDGEMMA_MODEL", "medgemma-27b-it")
     slug = model.replace("/", "_").replace(":", "_")
-    patches_from = args.patches_from or PROJECT_ROOT / "results" / "consistency" / slug / "V3" / "predictions.parquet"
-    out_dir = PROJECT_ROOT / "results" / "consistency" / slug / "V3W"
+    # Directory names follow the V3 runs: V3 / V3_test.
+    suffix = "" if args.split == "val" else "_test"
+    patches_from = args.patches_from or PROJECT_ROOT / "results" / "consistency" / slug / f"V3{suffix}" / "predictions.parquet"
+    out_dir = PROJECT_ROOT / "results" / "consistency" / slug / f"V3W{suffix}"
     log_path = out_dir / "calls.jsonl"
 
     if not patches_from.exists():
@@ -129,10 +133,11 @@ def main() -> int:
     log = CallLog(log_path)
     n_done = sum(log.done(j) for j in jobs)
 
-    logger.info("seed=%d model=%s patches=%d (from %s)", args.seed, model, len(patches), patches_from)
+    logger.info("seed=%d model=%s split=%s patches=%d (from %s)", args.seed, model, args.split, len(patches), patches_from)
     if args.dry_run:
         print("\n=== V3W dry run (no data loaded, no API calls) ===")
         print(f"model:            {model}")
+        print(f"split:            {args.split}")
         print(f"patches:          {len(patches)} from {patches_from}")
         print(f"calls total:      {len(jobs):,}  ({len(patches)} x {K})")
         print(f"already logged:   {n_done:,}")
@@ -156,7 +161,7 @@ def main() -> int:
         "family": "V3W",
         "model": model,
         "seed": args.seed,
-        "split": "val",
+        "split": args.split,
         "n_patches": len(patches),
         "k": K,
         "patches_from": str(patches_from.relative_to(PROJECT_ROOT)) if patches_from.is_relative_to(PROJECT_ROOT) else str(patches_from),
@@ -169,8 +174,8 @@ def main() -> int:
     }
     write_run_meta(out_dir / "run_meta.json", meta)
 
-    logger.info("Loading val images...")
-    images, _ = load_split_arrays("val")
+    logger.info("Loading %s images...", args.split)
+    images, _ = load_split_arrays(args.split)
 
     with tempfile.TemporaryDirectory(prefix="cpath_v3w_") as tmpdir:
         tile = Path(tmpdir) / "patch.png"
@@ -220,7 +225,7 @@ def main() -> int:
 
     from run_consistency import _compute_and_save_metrics
 
-    _compute_and_save_metrics(df, out_dir, model, "V3W")
+    _compute_and_save_metrics(df, out_dir, model, f"V3W{suffix}")
     print(f"Saved: {out_dir / 'run_meta.json'}")
     return 0
 
