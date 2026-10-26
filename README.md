@@ -2,9 +2,9 @@
 
 Code and prediction artifacts for a diagnostic study of **verbalized confidence** in an open medical vision-language model, evaluated on colorectal H&E histopathology patches.
 
-The question is narrow: when MedGemma-27b-it writes an integer confidence next to a tissue label, does that number carry enough information about correctness to drive selective prediction? For the prompt we selected, it does not. Its base model Gemma-3-27b-it, given the identical prompt, produces a confidence that does route above random. Agreement across five prompt variants routes where MedGemma's stated number does not, mostly because one restructured variant departs from the rest, and that variant's own stated confidence ranks as well. Agreement across five paraphrases that change only the wording routes on validation and less than half as well on the external cohort, and the external margins of agreement over confidence do not survive a plausible within-slide correlation.
+The question is narrow: when MedGemma-27b-it writes an integer confidence next to a tissue label, does that number carry enough information about correctness to drive selective prediction? For the prompt we selected, it does not. Its base model Gemma-3-27b-it, given the identical prompt, produces a confidence that does route above random. Agreement across five prompt variants routes where MedGemma's stated number does not, mostly because one restructured variant departs from the rest, and that variant's own stated confidence ranks as well. Agreement across five paraphrases that change only the wording routes on validation and about half as well on the external cohort, and the external margins of agreement over confidence do not survive a plausible within-slide correlation.
 
-This is not a proposal for a deployable triage system. Zero-shot accuracy here is 40.2% (MedGemma) and 35.6% (Gemma-3) on nine classes, so neither model is usable as a standalone classifier, and the repository contains no system anyone should deploy. What it contains is the measurement of a confidence signal, the routing analysis that follows from it, and the artifacts needed to check both.
+This is not a proposal for a deployable triage system. Zero-shot accuracy here is 40.6% (MedGemma) and 35.5% (Gemma-3) on nine classes, so neither model is usable as a standalone classifier, and the repository contains no system anyone should deploy. What it contains is the measurement of a confidence signal, the routing analysis that follows from it, and the artifacts needed to check both.
 
 Manuscript: *Diagnosing Verbalized Confidence in a Medical Vision-Language Model for Selective Prediction on Colorectal Histopathology Patches*. Under revision at *Scientific Reports*.
 
@@ -12,6 +12,7 @@ Manuscript: *Diagnosing Verbalized Confidence in a Medical Vision-Language Model
 
 - `src/models/client.py` : the only place an API client is constructed. Reads `API_KEY`, `BASE_URL`, `MEDGEMMA_MODEL` from `.env`.
 - `src/models/prompts.py` : the prompt registry, including the V3 prompt behind every full-scale run and the wording-only V3W family.
+- `src/models/parsing.py` : reads the label from a response's `LABEL:` line and its confidence from the `CONFIDENCE:` line. The earlier whole-response search is kept beside it, because the runs that stored no response text were labelled by it.
 - `src/models/k5.py` : the call log, resume logic and aggregation shared by the K=5 runs.
 - `src/triage/router.py` : selective-accuracy curves and the three tie policies. Verbalized confidence is coarse enough that tie handling changes the answer, so it is explicit rather than implicit.
 - `src/triage/weighted.py` : inverse-probability-weighted versions of the routing metrics, used to take the K=5 subsets back to their whole split.
@@ -79,22 +80,23 @@ Figure 1 is drawn in code from a real validation patch (PathMNIST index 6404, CC
 
 ### Order of execution
 
-The analysis scripts read saved predictions. `cluster_sensitivity.py` and `multiplicity_holm.py` consume the outputs of the others, so they go last.
+The analysis scripts read saved predictions. `verify_calibration_claims.py` and `parse_failure_check.py` read the fitted calibration parameters, so they follow `calibrate.py`; `cluster_sensitivity.py` and `multiplicity_holm.py` consume the outputs of the others, so they go last. `rescore_labels.py` goes first: it reads each saved response's `LABEL:` line again (the parser before v6.0 searched the whole response, reasoning included), keeps the earlier labels beside the new ones, and is idempotent.
 
 ```bash
+python scripts/rescore_labels.py
 python scripts/verify_partitions.py
 python scripts/routing_ci.py
 python scripts/logprob_comparison.py
 python scripts/logprob_censoring_sensitivity.py
 python scripts/confidence_information.py
-python scripts/verify_calibration_claims.py
 python scripts/temperature_nll_curve.py
-python scripts/parse_failure_check.py
 python scripts/cross_center_scalings.py
 python scripts/classification_stats.py
 python scripts/calibration_extras.py
 python scripts/calibrate.py --full-scale
 python scripts/calibrate.py --full-scale --vlm-model gemma-3-27b-it
+python scripts/verify_calibration_claims.py
+python scripts/parse_failure_check.py
 python scripts/sample_flow.py
 for s in val test; do
   python scripts/consistency_selection_weights.py --split $s
@@ -149,7 +151,7 @@ Four limits are worth knowing before reading any number here.
 
 **The K=5 results come from weighted subsets.** Each split's 1,800 patches were drawn to balance correct and incorrect predictions within each class. The tables lead with estimates weighted back to the whole split from the exact inclusion probabilities, and give the unweighted subset values beside them.
 
-**Intervals are unclustered.** Validation patches nest within 86 slides and external test patches within 25 slides from 50 patients, and MedMNIST v2 publishes no mapping from a PathMNIST array index back to its source slide. Table S1 reports how far each conclusion survives an assumed intra-cluster correlation instead. MedGemma's validation routing gap breaks at rho = 0.003, and the external margins of agreement over the two confidence signals break at 0.07 and 0.19, so those external margins are claimed in direction only.
+**Intervals are unclustered.** Validation patches nest within 86 slides and external test patches within 25 slides from 50 patients, and MedMNIST v2 publishes no mapping from a PathMNIST array index back to its source slide. Table S1 reports how far each conclusion survives an assumed intra-cluster correlation instead. MedGemma's validation routing gap includes zero before any correction, and the external margins of agreement over the two confidence signals break at 0.07 and 0.19, so those external margins are claimed in direction only.
 
 **The CNN is a reference on the external cohort only.** PathMNIST splits at the patch level, so the CNN's validation figures are leakage-inflated and are not interpreted. Its external accuracy, calibration and routing are clean measurements.
 

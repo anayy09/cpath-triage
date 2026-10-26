@@ -20,13 +20,14 @@ Usage:
 import base64
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
+
+from src.models.parsing import parse_prediction
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -159,7 +160,7 @@ class Client:
             max_tokens=max_tokens,
         )
 
-        prediction, confidence = _parse_prediction(raw_text, task)
+        prediction, confidence = parse_prediction(raw_text, task)
         rationale = _extract_rationale(raw_text)
 
         return Response(
@@ -236,7 +237,7 @@ class Client:
             top_logprobs=top_logprobs,
         )
 
-        prediction, confidence = _parse_prediction(raw_text, task)
+        prediction, confidence = parse_prediction(raw_text, task)
         rationale = _extract_rationale(raw_text)
 
         return (
@@ -284,7 +285,7 @@ class Client:
             content=[{"type": "text", "text": prompt_text}],
             max_tokens=max_tokens,
         )
-        prediction, confidence = _parse_prediction(raw_text, task)
+        prediction, confidence = parse_prediction(raw_text, task)
         return Response(
             prediction=prediction,
             confidence=confidence,
@@ -521,77 +522,6 @@ def _default_prompt(task: str, clinical_context: str) -> str:
     """Return a default prompt for the given task. See prompts.py for V1/V2/V3."""
     from src.models.prompts import get_prompt
     return get_prompt(task=task, version="V2", clinical_context=clinical_context)
-
-
-def _parse_prediction(text: str, task: str) -> tuple[str, float]:
-    """
-    Extract a prediction label and confidence from raw model text.
-
-    Args:
-        text: Raw model response text.
-        task: Task key (e.g., "egfr_mutation").
-
-    Returns:
-        Tuple of (prediction_label, confidence_float).
-        Returns ("unknown", 0.5) if parsing fails.
-    """
-    text_lower = text.lower()
-
-    # Map task to label patterns
-    label_patterns = {
-        "egfr_mutation": [
-            (r"egfr.mutant|egfr\+|egfr mutation detected|mutant", "EGFR-mutant"),
-            (r"egfr.wildtype|egfr-wt|egfr.wild.type|wildtype|wild.type", "EGFR-wildtype"),
-        ],
-        "kras_mutation": [
-            (r"kras.mutant|kras\+|kras mutation", "KRAS-mutant"),
-            (r"kras.wildtype|kras-wt|wildtype", "KRAS-wildtype"),
-        ],
-        "pattern_description": [
-            (r"lepidic", "lepidic"),
-            (r"acinar", "acinar"),
-            (r"papillary", "papillary"),
-            (r"solid", "solid"),
-            (r"micropapillary", "micropapillary"),
-        ],
-        # Nine NCT-CRC tissue classes. Order matters: more specific patterns
-        # first so "cancer-associated stroma" and "adenocarcinoma" are not
-        # shadowed by a bare "normal" or "muscle" match.
-        "tissue_classification": [
-            (r"colorectal adenocarcinoma|adenocarcinoma|tumou?r epithelium|\btum\b", "colorectal adenocarcinoma epithelium"),
-            (r"cancer.associated stroma|\bstroma\b|\bstr\b", "cancer-associated stroma"),
-            (r"normal colon mucosa|normal mucosa|\bnorm\b", "normal colon mucosa"),
-            (r"smooth muscle|\bmuscle\b|\bmus\b", "smooth muscle"),
-            (r"lymphocyte|\blym\b", "lymphocytes"),
-            (r"\bmucus\b|\bmuc\b", "mucus"),
-            (r"\bdebris\b|\bdeb\b", "debris"),
-            (r"adipose|\badi\b|fat tissue", "adipose"),
-            (r"background|\bback\b|empty|glass", "background"),
-        ],
-    }
-
-    prediction = "unknown"
-    for pattern, label in label_patterns.get(task, []):
-        if re.search(pattern, text_lower):
-            prediction = label
-            break
-
-    # Parse confidence percentage
-    conf_match = re.search(r"(\d{1,3})\s*%", text)
-    if conf_match:
-        confidence = float(conf_match.group(1)) / 100.0
-        confidence = max(0.0, min(1.0, confidence))
-    else:
-        # Check for decimal confidence
-        conf_match = re.search(r"confidence[:\s]+([0-9]+(?:\.[0-9]+)?)", text_lower)
-        confidence = float(conf_match.group(1)) if conf_match else 0.5
-        if confidence > 1.0:
-            confidence /= 100.0
-
-    if prediction == "unknown":
-        logger.debug("Could not parse prediction from: %s", text[:200])
-
-    return prediction, confidence
 
 
 def _extract_rationale(text: str) -> str:

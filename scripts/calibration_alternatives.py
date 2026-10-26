@@ -51,6 +51,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from confidence_information import auroc_midrank
 
 from src.eval.calibration import TemperatureScaler, adaptive_ece_score, ece_score
+from src.models.parsing import calibration_rows
 
 OUT = PROJECT_ROOT / "results" / "calibration" / "calibration_alternatives.json"
 MODELS = ("medgemma-27b-it", "gemma-3-27b-it")
@@ -60,7 +61,7 @@ EPS = 1e-7  # the clip calibration.py applies before the logit
 def frame(model: str, split_tag: str) -> tuple[np.ndarray, np.ndarray]:
     df = pd.read_parquet(PROJECT_ROOT / "results" / "zeroshot" / model / f"V3_full{split_tag}"
                          / "predictions.parquet")
-    df = df[df["pred_label"] != "unknown"]
+    df = calibration_rows(df)
     return (df["pred_confidence"].to_numpy(float),
             (df["pred_label"] == df["true_label_name"]).to_numpy(float))
 

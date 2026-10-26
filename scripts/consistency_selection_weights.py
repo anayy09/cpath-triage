@@ -105,6 +105,11 @@ def main() -> int:
             return 1
 
     full = pd.read_parquet(full_path)
+    # The subsets were drawn on the labels stored at the time. A re-scored run
+    # keeps them as pred_label_regex (scripts/rescore_labels.py), and the
+    # inclusion probabilities are defined by those, not by the corrected labels.
+    if "pred_label_regex" in full.columns:
+        full = full.assign(pred_label=full["pred_label_regex"])
     cons = pd.read_parquet(cons_path)
 
     replayed = replay_selection(full, N_PER_CLASS, args.seed)

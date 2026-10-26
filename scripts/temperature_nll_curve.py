@@ -52,6 +52,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.models.parsing import calibration_rows
+
 VLMS = ("medgemma-27b-it", "gemma-3-27b-it")
 LABELS = {"medgemma-27b-it": "MedGemma-27b-it", "gemma-3-27b-it": "Gemma-3-27b-it"}
 # Okabe-Ito, so the two curves stay distinguishable in grey and for colour-blind readers.
@@ -131,7 +133,7 @@ def calibration_partition(model: str, seed: int) -> tuple[np.ndarray, np.ndarray
     if not path.exists():
         raise FileNotFoundError(f"missing {path}")
     df = pd.read_parquet(path)
-    df = df[df["pred_label"] != "unknown"].copy()
+    df = calibration_rows(df)
     correct = (df["pred_label"] == df["true_label_name"]).to_numpy(float)
     conf = df["pred_confidence"].to_numpy(float)
     idx = np.random.default_rng(seed).permutation(len(df))

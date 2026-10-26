@@ -53,6 +53,7 @@ from src.eval.calibration import (
     brier_binary,
     ece_score,
 )
+from src.models.parsing import calibration_rows
 from src.triage.router import risk_coverage_curve
 
 VLMS = ("medgemma-27b-it", "gemma-3-27b-it")
@@ -80,7 +81,7 @@ def full_split(model: str, split: str) -> pd.DataFrame:
 def calibration_partitions(model: str, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     """calibrate.py's split: parse failures dropped, default_rng(seed) permutation, 80/20."""
     df = full_split(model, "val")
-    df = df[df["pred_label"] != "unknown"].copy()
+    df = calibration_rows(df)
     idx = np.random.default_rng(seed).permutation(len(df))
     cut = int(len(df) * 0.8)
     return df.iloc[idx[:cut]], df.iloc[idx[cut:]]

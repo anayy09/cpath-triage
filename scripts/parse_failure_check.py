@@ -43,6 +43,7 @@ from src.eval.calibration import (
     brier_binary,
     ece_score,
 )
+from src.models.parsing import calibration_rows
 
 MODEL = "gemma-3-27b-it"
 ZS = PROJECT_ROOT / "results" / "zeroshot" / MODEL
@@ -93,9 +94,7 @@ def main() -> int:
         .to_dict(orient="records")
         for split, df in (("val", val), ("test", test))
     }
-    keep = val["pred_label"] != "unknown"
-    keep_t = test["pred_label"] != "unknown"
-    excluded = tables_5_and_9(val[keep], test[keep_t], args.seed)
+    excluded = tables_5_and_9(calibration_rows(val), calibration_rows(test), args.seed)
     retained = tables_5_and_9(val, test, args.seed)
 
     pc = json.loads((PROJECT_ROOT / "results" / "calibration" / MODEL / "V3_full"

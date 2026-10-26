@@ -3,7 +3,7 @@ src/models/prompts.py
 
 Prompt templates for the colorectal H&E tissue classification task. client.py
 imports get_prompt() to build the default prompt for a task. Keep the label
-vocabulary here consistent with the parser in client._parse_prediction.
+vocabulary here consistent with the parser in parsing.parse_prediction.
 
 The nine NCT-CRC tissue classes (PathMNIST label space):
     ADI  adipose
