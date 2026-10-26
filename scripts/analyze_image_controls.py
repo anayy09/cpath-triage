@@ -28,6 +28,13 @@ What each block answers:
 Random routing is scored at its exact expectation, the base accuracy of the
 outcome routed, rather than by sampling orders.
 
+Two scoring rules. The control and V3W runs kept their response text and are
+re-scored from the LABEL line (scripts/rescore_labels.py); the stored V3 run did
+not and keeps its whole-text labels. A quantity inside one control run uses the
+re-scored labels. A comparison with the stored V3 run (swap matches, V3W drift,
+real minus shuffled) uses the stored labels on both sides, kept as *_regex
+columns, so that re-scoring is not counted as drift or as an image effect.
+
 Output: results/consistency/{model}/controls/summary.json
 
 Usage:
@@ -84,8 +91,14 @@ def strata_accuracy(cons: np.ndarray, correct: np.ndarray) -> dict:
     }
 
 
-def labels_of(df: pd.DataFrame) -> list[list[str]]:
-    return [json.loads(s) for s in df["raw_labels"]]
+def stored(df: pd.DataFrame, col: str) -> pd.Series:
+    """The column as the whole-text parser stored it, for comparisons with the stored V3 run."""
+    return df[f"{col}_regex"] if f"{col}_regex" in df.columns else df[col]
+
+
+def labels_of(df: pd.DataFrame, as_stored: bool = False) -> list[list[str]]:
+    col = stored(df, "raw_labels") if as_stored else df["raw_labels"]
+    return [json.loads(s) for s in col]
 
 
 def no_image_block(path: Path) -> dict:
@@ -113,31 +126,59 @@ def no_image_block(path: Path) -> dict:
     return block
 
 
+def rescoring_effect(pred: pd.DataFrame, n_boot: int, seed: int) -> dict:
+    """
+    The swap run sent the five V3-family prompts with real images and kept its
+    response text, so it is the one place where those prompts' agreement signal
+    can be scored both ways. The difference estimates how the stored V3 runs,
+    which kept no text, would move if they could be re-scored.
+    """
+    if "consistency_score_regex" not in pred.columns:
+        return {"note": "run not re-scored (no *_regex columns)"}
+    c1, y1 = pred["consistency_score"].to_numpy(float), pred["is_correct_vs_donor"].to_numpy(bool)
+    c0, y0 = pred["consistency_score_regex"].to_numpy(float), pred["is_correct_vs_donor_regex"].to_numpy(bool)
+
+    def diff(i: np.ndarray) -> float:
+        return gap_vs_random(c1[i], y1[i]) - gap_vs_random(c0[i], y0[i])
+
+    return {
+        "outcome": "modal vote scored against the supplied (donor) image's class; unweighted",
+        "gap_vs_random_whole_text_rule": gap_vs_random(c0, y0),
+        "gap_vs_random_label_line": gap_vs_random(c1, y1),
+        "difference": diff(np.arange(len(pred))),
+        "difference_ci95": boot(diff, len(pred), n_boot, seed),
+    }
+
+
 def swap_block(pred: pd.DataFrame, real: pd.DataFrame) -> dict:
     real_by = real.set_index("arr_idx")
     donor = real_by.loc[pred["donor_arr_idx"].to_numpy()]
     recip = real_by.loc[pred["recipient_arr_idx"].to_numpy()]
-    lab_swap = labels_of(pred)
+    lab_swap = labels_of(pred, as_stored=True)
     lab_donor = labels_of(donor)
     lab_recip = labels_of(recip)
     per_call_donor = np.mean([a == b for x, y in zip(lab_swap, lab_donor) for a, b in zip(x, y)])
     per_call_recip = np.mean([a == b for x, y in zip(lab_swap, lab_recip) for a, b in zip(x, y)])
-    cons = pred["consistency_score"].to_numpy(float)
+    cons = stored(pred, "consistency_score").to_numpy(float)
+    modal = stored(pred, "modal_label").to_numpy()
     return {
         "n_pairs": len(pred),
         "per_call_label_match_donor_stored": float(per_call_donor),
         "per_call_label_match_recipient_stored": float(per_call_recip),
-        "modal_match_donor_stored": float((pred["modal_label"].to_numpy() == donor["modal_label"].to_numpy()).mean()),
-        "modal_match_recipient_stored": float((pred["modal_label"].to_numpy() == recip["modal_label"].to_numpy()).mean()),
+        "modal_match_donor_stored": float((modal == donor["modal_label"].to_numpy()).mean()),
+        "modal_match_recipient_stored": float((modal == recip["modal_label"].to_numpy()).mean()),
         "consistency_corr_with_donor_stored": float(np.corrcoef(cons, donor["consistency_score"].to_numpy(float))[0, 1]),
         "consistency_corr_with_recipient_stored": float(np.corrcoef(cons, recip["consistency_score"].to_numpy(float))[0, 1]),
         "modal_accuracy_vs_donor_label": float(pred["is_correct_vs_donor"].mean()),
         "modal_accuracy_vs_recipient_label": float(pred["is_correct_vs_recipient"].mean()),
-        "note": "Stored labels come from an earlier session; the same-session drift rate is in the v3w block.",
+        "note": "Stored labels come from an earlier session; the same-session drift rate is in the v3w block. "
+                "Matches and correlations use the swap run's whole-text labels, as the stored run has only those; "
+                "the two modal accuracies use its re-scored labels.",
     }
 
 
-def weighted_shuffle_block(cs: np.ndarray, ys: np.ndarray, cr: np.ndarray, yr: np.ndarray,
+def weighted_shuffle_block(cs: np.ndarray, ys: np.ndarray, cs0: np.ndarray, ys0: np.ndarray,
+                           cr: np.ndarray, yr: np.ndarray,
                            wdf: pd.DataFrame, n_boot: int, seed: int) -> dict:
     """
     Cohort-weighted shuffle contrasts, in the summarize_diffs format of
@@ -155,6 +196,8 @@ def weighted_shuffle_block(cs: np.ndarray, ys: np.ndarray, cr: np.ndarray, yr: n
         return {
             "shuffled_consistency": weighted_auc(cs[idx], ys[idx], wi),
             "shuffled_random": weighted_accuracy(ys[idx], wi),
+            "shuffled_consistency_stored": weighted_auc(cs0[idx], ys0[idx], wi),
+            "shuffled_random_stored": weighted_accuracy(ys0[idx], wi),
             "real_consistency": weighted_auc(cr[idx], yr[idx], wi),
             "real_random": weighted_accuracy(yr[idx], wi),
         }
@@ -163,18 +206,23 @@ def weighted_shuffle_block(cs: np.ndarray, ys: np.ndarray, cr: np.ndarray, yr: n
     rows = [stats(idx) for idx in idx_matrix]
     boot = {k: np.array([r[k] for r in rows]) for k in full}
     sh_gap = boot["shuffled_consistency"] - boot["shuffled_random"]
+    sh0_gap = boot["shuffled_consistency_stored"] - boot["shuffled_random_stored"]
     re_gap = boot["real_consistency"] - boot["real_random"]
     full_sh = full["shuffled_consistency"] - full["shuffled_random"]
+    full_sh0 = full["shuffled_consistency_stored"] - full["shuffled_random_stored"]
     full_re = full["real_consistency"] - full["real_random"]
     return {
         "auc": {k: round(v, 4) for k, v in full.items()},
         "contrasts": {
             "consistency_minus_random": summarize_diffs(sh_gap, full_sh),
             "real_consistency_minus_random": summarize_diffs(re_gap, full_re),
-            "real_minus_shuffled_gap": summarize_diffs(re_gap - sh_gap, full_re - full_sh),
+            "real_minus_shuffled_gap": summarize_diffs(re_gap - sh0_gap, full_re - full_sh0),
+            "consistency_minus_random_stored_labels": summarize_diffs(sh0_gap, full_sh0),
         },
         "note": "Horvitz-Thompson weights from V3/weights.parquet; intervals resample inside "
-                "the selection cells. consistency_minus_random is the shuffled arm.",
+                "the selection cells. consistency_minus_random is the shuffled arm, re-scored; "
+                "real_minus_shuffled_gap uses the shuffled arm's whole-text labels, as the real "
+                "run has only those.",
     }
 
 
@@ -188,12 +236,13 @@ def shuffle_block(sh: pd.DataFrame, real: pd.DataFrame, wdf: pd.DataFrame | None
         sh = sh.set_index("arr_idx").loc[wdf["arr_idx"].to_numpy()].reset_index()
     real = real.set_index("arr_idx").loc[sh["arr_idx"].to_numpy()].reset_index()
     cs, ys = sh["consistency_score"].to_numpy(float), sh["is_correct"].to_numpy(bool)
+    cs0, ys0 = stored(sh, "consistency_score").to_numpy(float), stored(sh, "is_correct").to_numpy(bool)
     cr, yr = real["consistency_score"].to_numpy(float), real["is_correct"].to_numpy(bool)
     n = len(sh)
-    weighted = None if wdf is None else weighted_shuffle_block(cs, ys, cr, yr, wdf, n_boot, seed)
+    weighted = None if wdf is None else weighted_shuffle_block(cs, ys, cs0, ys0, cr, yr, wdf, n_boot, seed)
 
     def diff(idx: np.ndarray) -> float:
-        return gap_vs_random(cr[idx], yr[idx]) - gap_vs_random(cs[idx], ys[idx])
+        return gap_vs_random(cr[idx], yr[idx]) - gap_vs_random(cs0[idx], ys0[idx])
 
     pred_dist = sh["modal_label"].value_counts(normalize=True).round(4).to_dict()
     return {
@@ -224,7 +273,7 @@ def shuffle_block(sh: pd.DataFrame, real: pd.DataFrame, wdf: pd.DataFrame | None
 
 def v3w_block(v3w: pd.DataFrame, real: pd.DataFrame) -> dict:
     real = real.set_index("arr_idx").loc[v3w["arr_idx"].to_numpy()].reset_index()
-    v0_new = [x[0] for x in labels_of(v3w)]
+    v0_new = [x[0] for x in labels_of(v3w, as_stored=True)]
     v0_old = [x[0] for x in labels_of(real)]
     disagree = int(sum(a != b for a, b in zip(v0_new, v0_old)))
     c, y = v3w["consistency_score"].to_numpy(float), v3w["is_correct"].to_numpy(bool)
@@ -269,7 +318,9 @@ def main() -> int:
     if "no_image" in present:
         summary["no_image"] = no_image_block(present["no_image"])
     if "swap" in present:
-        summary["swap"] = swap_block(pd.read_parquet(present["swap"]), real)
+        swap = pd.read_parquet(present["swap"])
+        summary["swap"] = swap_block(swap, real)
+        summary["swap"]["rescoring_effect"] = rescoring_effect(swap, args.n_boot, args.seed)
     if "shuffle" in present:
         wpath = base / "V3" / "weights.parquet"
         if not wpath.exists():

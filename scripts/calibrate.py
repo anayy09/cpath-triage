@@ -44,6 +44,7 @@ from src.eval.calibration import (
     brier_multiclass,
     reliability_diagram_data,
 )
+from src.models.parsing import calibration_rows
 
 N_CLASSES = 9
 ALL_LABELS = [LABEL_NAMES[i] for i in range(N_CLASSES)]
@@ -154,8 +155,9 @@ def calibrate_vlm(
     Returns dict of all metrics for PROGRESS.md.
     """
     df = pd.read_parquet(pred_path)
-    # Exclude "unknown" parse failures from calibration (there should be none)
-    df = df[df["pred_label"] != "unknown"].copy()
+    # Off-list answers have no class to be right about; which rows those are is
+    # fixed by the stored labels (src/models/parsing.py, calibration_rows).
+    df = calibration_rows(df)
     df["correct"] = df["pred_label"] == df["true_label_name"]
 
     rng = np.random.default_rng(seed)
@@ -217,7 +219,7 @@ def calibrate_vlm(
 
     if test_pred_path is not None:
         test_df = pd.read_parquet(test_pred_path)
-        test_df = test_df[test_df["pred_label"] != "unknown"].copy()
+        test_df = calibration_rows(test_df)
         test_df["correct"] = test_df["pred_label"] == test_df["true_label_name"]
 
         test_conf = test_df["pred_confidence"].to_numpy(dtype=float)

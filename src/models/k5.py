@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.models.parsing import parse_prediction
+
 
 @dataclass(frozen=True)
 class Job:
@@ -147,15 +149,25 @@ def summarize_k(labels: list[str], confs: list[float], true_name: str, k: int) -
 
 
 def collect(log: CallLog, key: str, k: int, repeat: int = 0) -> tuple[list[str], list[float]] | None:
-    """Labels and confidences for one patch in variant order, or None if incomplete."""
+    """
+    Labels and confidences for one patch in variant order, or None if incomplete.
+
+    Logs written before the parser fix store labels from the whole-text search
+    (src/models/parsing.py), so the label is read again from the logged response
+    text, which is the primary record, whenever it is there.
+    """
     labels: list[str] = []
     confs: list[float] = []
     for v in range(k):
         rec = log.records.get(f"{key}|{v}|{repeat}")
         if rec is None:
             return None
-        labels.append(rec["label"])
-        confs.append(float(rec["confidence"]))
+        if rec.get("raw_text"):
+            label, conf = parse_prediction(rec["raw_text"], "tissue_classification")
+        else:
+            label, conf = rec["label"], float(rec["confidence"])
+        labels.append(label)
+        confs.append(float(conf))
     return labels, confs
 
 

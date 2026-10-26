@@ -57,7 +57,6 @@ from src.data.pathmnist import (
     load_labels,
     load_split_arrays,
 )
-from src.models.client import Client
 from src.models.prompts import get_prompt
 
 logging.basicConfig(
@@ -129,6 +128,10 @@ def run_evaluation(
     logger.info("Loading %s images...", split)
     val_images, _ = load_split_arrays(split)
     logger.info("%s images loaded, shape=%s", split, val_images.shape)
+
+    # Imported here so the metric and plotting helpers below can be used by
+    # analysis scripts in an environment without the API client.
+    from src.models.client import Client
 
     client = Client(model=model)
     prompt_text = get_prompt(task="tissue_classification", version=prompt_version)
@@ -210,10 +213,8 @@ def run_evaluation(
 
     true_names = df["true_label_name"].tolist()
     pred_names = df["pred_label"].tolist()
-
-    accuracy = accuracy_score(true_names, pred_names)
-    macro_f1 = f1_score(true_names, pred_names, average="macro", labels=ALL_LABELS, zero_division=0)
-    per_class = f1_score(true_names, pred_names, average=None, labels=ALL_LABELS, zero_division=0)
+    scores = metrics_from_predictions(true_names, pred_names)
+    accuracy, macro_f1 = scores["accuracy"], scores["macro_f1"]
 
     metrics = {
         "model": model,
@@ -222,9 +223,7 @@ def run_evaluation(
         "seed": seed,
         "n_per_class": n_per_class,
         "n_evaluated": len(records),
-        "accuracy": round(float(accuracy), 4),
-        "macro_f1": round(float(macro_f1), 4),
-        "per_class_f1": {ALL_LABELS[i]: round(float(v), 4) for i, v in enumerate(per_class)},
+        **scores,
         "parse_failure_rate": round(n_parse_fail / len(records), 4),
         "n_parse_failures": n_parse_fail,
         "total_prompt_tokens": total_prompt_tok,
@@ -248,6 +247,18 @@ def run_evaluation(
 
     _plot_confusion_matrix(true_names, pred_names, out_dir / "confusion_matrix.png")
     print(f"Results: {out_dir}")
+
+
+def metrics_from_predictions(true: list[str], pred: list[str]) -> dict:
+    """Accuracy, macro F1 and per-class F1 over the nine classes, as stored in metrics.json."""
+    accuracy = accuracy_score(true, pred)
+    macro_f1 = f1_score(true, pred, average="macro", labels=ALL_LABELS, zero_division=0)
+    per_class = f1_score(true, pred, average=None, labels=ALL_LABELS, zero_division=0)
+    return {
+        "accuracy": round(float(accuracy), 4),
+        "macro_f1": round(float(macro_f1), 4),
+        "per_class_f1": {ALL_LABELS[i]: round(float(v), 4) for i, v in enumerate(per_class)},
+    }
 
 
 def _plot_confusion_matrix(true: list[str], pred: list[str], out_path: Path) -> None:

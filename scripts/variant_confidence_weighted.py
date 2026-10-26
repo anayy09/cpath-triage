@@ -89,33 +89,46 @@ def per_variant(df: pd.DataFrame, w: np.ndarray, strata: np.ndarray, n_boot: int
     out = {}
     for k in range(K):
         correct = labels[:, k] == true
-        conf = confs[:, k]
-
-        def gap(ix: np.ndarray, conf=conf, correct=correct) -> float:
-            return weighted_auc(conf[ix], correct[ix], w[ix]) - weighted_accuracy(correct[ix], w[ix])
-
-        def auroc(ix: np.ndarray, conf=conf, correct=correct) -> float:
-            return weighted_auroc(conf[ix], correct[ix], w[ix])
-
-        full = np.arange(len(df))
-        g_point, a_point = gap(full), auroc(full)
-        g_boot = np.array([gap(ix) for ix in idx_matrix])
-        a_boot = np.array([auroc(ix) for ix in idx_matrix])
-        lo, hi = np.percentile(a_boot, [2.5, 97.5])
-        out[f"variant_{k}"] = {
-            "cohort_accuracy": round(weighted_accuracy(correct, w), 4),
-            "cohort_auroc": round(a_point, 4),
-            "cohort_auroc_ci": [round(float(lo), 4), round(float(hi), 4)],
-            "cohort_auroc_exact": a_point,
-            "cohort_selective_auc": round(weighted_auc(conf, correct, w), 4),
-            "cohort_gap_vs_random": summarize_diffs(g_boot, g_point),
-            "cohort_gap_exact": g_point,
-            "subset_accuracy": round(float(correct.mean()), 4),
-            "subset_auroc": round(auroc_midrank(conf, correct), 4),
-            "n_distinct_confidences": len(np.unique(conf)),
-            "mean_confidence": round(float(conf.mean()), 4),
-        }
+        unknown = labels[:, k] == "unknown"
+        rec = _variant_stats(confs[:, k], correct, w, idx_matrix)
+        rec["n_unknown"] = int(unknown.sum())
+        # An unknown answer is scored as an error at its stated confidence. Where
+        # a variant has any, the same statistics without them show how much of
+        # its ranking depends on that scoring.
+        if unknown.any():
+            keep = ~unknown
+            rec["without_unknown"] = _variant_stats(
+                confs[keep, k], correct[keep], w[keep],
+                stratified_bootstrap_indices(strata[keep], n_boot, seed))
+        out[f"variant_{k}"] = rec
     return out
+
+
+def _variant_stats(conf: np.ndarray, correct: np.ndarray, w: np.ndarray, idx_matrix: np.ndarray) -> dict:
+    def gap(ix: np.ndarray) -> float:
+        return weighted_auc(conf[ix], correct[ix], w[ix]) - weighted_accuracy(correct[ix], w[ix])
+
+    def auroc(ix: np.ndarray) -> float:
+        return weighted_auroc(conf[ix], correct[ix], w[ix])
+
+    full = np.arange(len(conf))
+    g_point, a_point = gap(full), auroc(full)
+    g_boot = np.array([gap(ix) for ix in idx_matrix])
+    a_boot = np.array([auroc(ix) for ix in idx_matrix])
+    lo, hi = np.percentile(a_boot, [2.5, 97.5])
+    return {
+        "cohort_accuracy": round(weighted_accuracy(correct, w), 4),
+        "cohort_auroc": round(a_point, 4),
+        "cohort_auroc_ci": [round(float(lo), 4), round(float(hi), 4)],
+        "cohort_auroc_exact": a_point,
+        "cohort_selective_auc": round(weighted_auc(conf, correct, w), 4),
+        "cohort_gap_vs_random": summarize_diffs(g_boot, g_point),
+        "cohort_gap_exact": g_point,
+        "subset_accuracy": round(float(correct.mean()), 4),
+        "subset_auroc": round(auroc_midrank(conf, correct), 4),
+        "n_distinct_confidences": len(np.unique(conf)),
+        "mean_confidence": round(float(conf.mean()), 4),
+    }
 
 
 def main() -> int:

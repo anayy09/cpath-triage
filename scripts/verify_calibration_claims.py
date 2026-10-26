@@ -46,6 +46,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.models.parsing import calibration_rows
+
 SEED = 42
 VLMS = ("medgemma-27b-it", "gemma-3-27b-it")
 
@@ -64,7 +66,7 @@ def eval_partition(model: str) -> pd.DataFrame:
     df = pd.read_parquet(
         PROJECT_ROOT / "results" / "zeroshot" / model / "V3_full" / "predictions.parquet"
     )
-    df = df[df["pred_label"] != "unknown"].copy()
+    df = calibration_rows(df)
     df["correct"] = df["pred_label"] == df["true_label_name"]
     rng = np.random.default_rng(SEED)
     idx = rng.permutation(len(df))
@@ -75,7 +77,7 @@ def test_frame(model: str) -> pd.DataFrame:
     df = pd.read_parquet(
         PROJECT_ROOT / "results" / "zeroshot" / model / "V3_full_test" / "predictions.parquet"
     )
-    df = df[df["pred_label"] != "unknown"].copy()
+    df = calibration_rows(df)
     df["correct"] = df["pred_label"] == df["true_label_name"]
     return df
 

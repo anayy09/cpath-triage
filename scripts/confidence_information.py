@@ -61,12 +61,14 @@ from sklearn.metrics import mutual_info_score
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.models.parsing import calibration_rows
 from src.triage.router import tie_statistics
 
 SEED = 42
 N_BINS = 15
 N_BOOT = 1000
 N_PERM = 1000
+N_BOOT_WITHIN_CLASS = 2000
 MODELS = ("medgemma-27b-it", "gemma-3-27b-it")
 
 
@@ -185,7 +187,7 @@ def eval_partition_frame(model: str) -> pd.DataFrame:
     df = pd.read_parquet(
         PROJECT_ROOT / "results" / "zeroshot" / model / "V3_full" / "predictions.parquet"
     )
-    df = df[df["pred_label"] != "unknown"].copy()
+    df = calibration_rows(df)
     df["correct"] = df["pred_label"] == df["true_label_name"]
     rng = np.random.default_rng(SEED)
     idx = rng.permutation(len(df))
@@ -242,6 +244,11 @@ def by_predicted_class(df: pd.DataFrame) -> dict:
                 round(auroc_midrank(conf, corr), 4) if 0 < corr.sum() < len(corr) else None
             ),
         }
+        # Only classes whose confidence takes more than one value can rank, and
+        # the text quotes intervals for exactly those.
+        if 0 < corr.sum() < len(corr) and len(np.unique(conf)) > 1:
+            rows[str(label)]["within_class_auroc_bootstrap"] = bootstrap_auroc(
+                conf, corr, N_BOOT_WITHIN_CLASS, SEED)
     ordered = dict(sorted(rows.items(), key=lambda kv: -kv[1]["n"]))
     means = [v["mean_confidence"] for v in ordered.values()]
     return {

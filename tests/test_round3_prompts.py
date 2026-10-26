@@ -75,5 +75,7 @@ def test_shuffle_keeps_colour_multiset_and_is_seeded() -> None:
     a, b = shuffle_pixels(arr, 7, 42), shuffle_pixels(arr, 7, 42)
     assert np.array_equal(a, b)
     assert not np.array_equal(a, shuffle_pixels(arr, 8, 42))
-    flat = lambda x: sorted(map(tuple, x.reshape(-1, 3)))
+    def flat(x):
+        return sorted(map(tuple, x.reshape(-1, 3)))
+
     assert flat(a) == flat(arr)

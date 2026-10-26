@@ -15,7 +15,11 @@ families. The saved runs allow that without new inference:
                  byte-identical to V3's variant 0. The two families ran in different
                  sessions (30 of 1,800 validation labels differ between the two
                  copies of variant 0), so pooled agreement mixes session drift into
-                 the signal.
+                 the signal. The V3W run is re-scored from its LABEL lines
+                 (scripts/rescore_labels.py) and the V3 run, which kept no response
+                 text, is not, so the pool uses V3W's stored whole-text labels to put
+                 all nine prompts under one scoring rule. The V3W family alone uses
+                 its re-scored labels.
 
 For every K and every subset of K prompts from a family, agreement (the modal
 fraction, ties to the first prompt in pool order) routes the subset's modal
@@ -52,9 +56,10 @@ CONS = PROJECT_ROOT / "results" / "consistency" / "medgemma-27b-it"
 OUT = CONS / "k_ablation.json"
 
 
-def answers(run: str) -> tuple[pd.DataFrame, list[list[str]]]:
+def answers(run: str, as_stored: bool = False) -> tuple[pd.DataFrame, list[list[str]]]:
     df = pd.read_parquet(CONS / run / "predictions.parquet")
-    return df, [json.loads(s) for s in df["raw_labels"]]
+    col = "raw_labels_regex" if as_stored and "raw_labels_regex" in df.columns else "raw_labels"
+    return df, [json.loads(s) for s in df[col]]
 
 
 def modal_agree(rows: list[list[str]]) -> tuple[np.ndarray, np.ndarray]:
@@ -79,8 +84,9 @@ def family_pools(split: str) -> dict[str, tuple[list[str], list[list[str]], pd.D
         if w_df["arr_idx"].tolist() != v3_df["arr_idx"].tolist():
             raise SystemExit(f"V3W{suffix} patches differ from V3{suffix}")
         pools["V3W"] = ([f"V3W.{k}" for k in range(5)], w, v3_df)
+        _, w_stored = answers(f"V3W{suffix}", as_stored=True)
         pools["pooled"] = ([f"V3.{k}" for k in range(5)] + [f"V3W.{k}" for k in range(1, 5)],
-                           [a + b[1:] for a, b in zip(v3, w)], v3_df)
+                           [a + b[1:] for a, b in zip(v3, w_stored)], v3_df)
     return pools
 
 

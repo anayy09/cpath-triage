@@ -33,6 +33,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.eval.calibration import adaptive_ece_score, brier_binary, ece_score
+from src.models.parsing import calibration_rows
 
 SEED = 42
 N_CLASSES = 9
@@ -58,12 +59,12 @@ def _eval_partition(df: pd.DataFrame) -> pd.DataFrame:
 def vlm_extras(model: str) -> dict:
     zroot = PROJECT_ROOT / "results" / "zeroshot" / model
     val = pd.read_parquet(zroot / "V3_full" / "predictions.parquet")
-    val = val[val["pred_label"] != "unknown"].copy()
+    val = calibration_rows(val)
     val["correct"] = val["pred_label"] == val["true_label_name"]
     ev = _eval_partition(val)
 
     test = pd.read_parquet(zroot / "V3_full_test" / "predictions.parquet")
-    test = test[test["pred_label"] != "unknown"].copy()
+    test = calibration_rows(test)
     test["correct"] = test["pred_label"] == test["true_label_name"]
 
     return {

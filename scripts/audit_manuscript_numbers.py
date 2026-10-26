@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CONS = "results/consistency/medgemma-27b-it"
 tex = (ROOT / "paper" / "latex" / "main.tex").read_text(encoding="utf-8")
 supp = (ROOT / "paper" / "latex" / "supplementary.tex").read_text(encoding="utf-8")
-letter_path = ROOT / "paper" / "RESPONSE_LETTER_SR_R3.md"
+letter_path = ROOT / "paper" / "RESPONSE_LETTER_SR_R5.md"
 letter = letter_path.read_text(encoding="utf-8") if letter_path.exists() else ""
 
 fails: list[str] = []
@@ -75,6 +75,9 @@ def near(label: str, artifact: float, printed: float, nd: int = 3) -> None:
     """A printed value is consistent with a four-decimal artifact."""
     global checks
     checks += 1
+    if artifact is None:
+        fails.append(f"{label}: artifact has no value vs printed {printed}")
+        return
     if abs(float(artifact) - printed) > 0.5 * 10 ** -nd + 1e-9:
         fails.append(f"{label}: artifact {artifact} vs printed {printed}")
 
@@ -90,9 +93,9 @@ def exact(label: str, value: float, printed: float, nd: int = 3) -> None:
 # --- Table 6: routing by confidence -------------------------------------------
 rt = load("results/routing/routing_auc_ci.json")["results"]
 for key, (cal, rnd, gap, lo, hi) in {
-    "medgemma-27b-it|val": (0.396, 0.402, -0.007, -0.012, -0.001),
-    "medgemma-27b-it|test": (0.376, 0.342, 0.034, 0.027, 0.041),
-    "gemma-3-27b-it|val": (0.470, 0.356, 0.114, 0.108, 0.119),
+    "medgemma-27b-it|val": (0.402, 0.406, -0.004, -0.010, 0.002),
+    "medgemma-27b-it|test": (0.389, 0.352, 0.037, 0.029, 0.044),
+    "gemma-3-27b-it|val": (0.469, 0.355, 0.114, 0.108, 0.120),
     "gemma-3-27b-it|test": (0.425, 0.309, 0.115, 0.108, 0.123),
     "resnet18_64px|test": (0.978, 0.911, 0.067, 0.061, 0.073),
 }.items():
@@ -157,7 +160,7 @@ if (ROOT / CONS / "V3W" / "weighted_routing.json").exists():
             f"between {num(min(drops), True)} and {num(max(drops), True)}")
     s1_v3w = load("results/clustering/design_effect_sensitivity.json")["findings"][
         "Wording-only (V3W) consistency minus random (val)"]
-    near("S1 V3W point", s1_v3w["point_estimate"], 0.090)
+    near("S1 V3W point", s1_v3w["point_estimate"], 0.100)
     checks += 1
     if not s1_v3w["break_even_rho"] > 1:
         fails.append("S1 V3W row: break-even printed as >1 but is not")
@@ -220,9 +223,8 @@ for run, (m_val, m_test) in (("medgemma-27b-it", (8.22, 8.25)), ("gemma-3-27b-it
 # --- Table S1 -------------------------------------------------------------------
 de = load("results/clustering/design_effect_sensitivity.json")["findings"]
 for name, (pt, be) in {
-    "MedGemma routing gap vs random (val)": (-0.007, 0.003),
-    "MedGemma routing gap vs random (test)": (0.034, 0.073),
-    "Gemma-3 routing gap vs random (test)": (0.115, 0.868),
+    "MedGemma routing gap vs random (test)": (0.037, 0.090),
+    "Gemma-3 routing gap vs random (test)": (0.115, 0.855),
     "CNN-64 routing gap vs random (test)": (0.067, 0.446),
     "Consistency minus random (test)": (0.106, 0.684),
     "Mean-of-5 confidence minus random (val)": (0.026, 0.080),
@@ -237,6 +239,11 @@ for name, (pt, be) in {
 }.items():
     near(f"S1 point {name}", de[name]["point_estimate"], pt)
     near(f"S1 rho {name}", de[name]["break_even_rho"], be)
+mg_val = de["MedGemma routing gap vs random (val)"]
+near("S1 point MedGemma routing gap vs random (val)", mg_val["point_estimate"], -0.004)
+checks += 1
+if mg_val["break_even_rho"] is not None or "& $-0.004$ & includes zero" not in supp:
+    fails.append("S1 MedGemma validation row: interval should include zero and the table say so")
 for name in ("Gemma-3 routing gap vs random (val)", "Consistency minus random (val)",
              "Consistency minus single-query confidence, fixed outcome (val)"):
     checks += 1
@@ -254,12 +261,12 @@ for label, value in (("370", flow["medgemma-27b-it"]["calibration_set"]["pilot_o
     if str(value) != label:
         fails.append(f"3.1 pilot overlap printed {label}, artifact {value}")
 nll = load("results/calibration/nll_curve.json")["models"]
-near("3.3 MedGemma NLL T=1", nll["medgemma-27b-it"]["nll_at"]["1.0"], 2.117)
+near("3.3 MedGemma NLL T=1", nll["medgemma-27b-it"]["nll_at"]["1.0"], 2.091)
 near("3.3 MedGemma NLL T=200", nll["medgemma-27b-it"]["nll_at"]["200.0"], 0.695)
-near("3.3 Gemma-3 NLL T=1", nll["gemma-3-27b-it"]["nll_at"]["1.0"], 1.492)
+near("3.3 Gemma-3 NLL T=1", nll["gemma-3-27b-it"]["nll_at"]["1.0"], 1.494)
 near("3.3 Gemma-3 NLL T=200", nll["gemma-3-27b-it"]["nll_at"]["200.0"], 0.694)
-near("3.3 log-odds on errors", nll["medgemma-27b-it"]["conditions"]["logodds_mass_on_errors"], 16546, nd=0)
-near("3.3 log-odds on correct", nll["medgemma-27b-it"]["conditions"]["logodds_mass_on_correct"], 10737, nd=0)
+near("3.3 log-odds on errors", nll["medgemma-27b-it"]["conditions"]["logodds_mass_on_errors"], 16336, nd=0)
+near("3.3 log-odds on correct", nll["medgemma-27b-it"]["conditions"]["logodds_mass_on_correct"], 10947, nd=0)
 checks += 1
 if nll["gemma-3-27b-it"]["conditions"]["n_logit_negative"] != 29:
     fails.append("3.3: Gemma-3 confidences below 0.5 is not 29")
@@ -275,9 +282,9 @@ if "shuffle" in ctrl and ctrl["shuffle"].get("weighted_cohort"):
     shw = ctrl["shuffle"]["weighted_cohort"]
     present("4.5 shuffle gap", gap_string(shw["contrasts"]["consistency_minus_random"]))
     present("4.5 real minus shuffled", gap_string(shw["contrasts"]["real_minus_shuffled_gap"]))
-    near("4.5 shuffled cohort accuracy %", 100 * shw["auc"]["shuffled_random"], 11.3, nd=1)
+    near("4.5 shuffled cohort accuracy %", 100 * shw["auc"]["shuffled_random"], 10.8, nd=1)
     near("4.5 shuffled background share %",
-         100 * ctrl["shuffle"]["shuffled"]["modal_label_distribution"]["background"], 89, nd=0)
+         100 * ctrl["shuffle"]["shuffled"]["modal_label_distribution"]["background"], 98, nd=0)
 if "v3w" in ctrl:
     checks += 1
     if ctrl["v3w"]["variant0_disagreements_with_stored_v3_variant0"] != 30:
@@ -324,15 +331,15 @@ near("4.5 V5 variant 2 AUROC", vcw["V5"]["variants"]["variant_2"]["cohort_auroc"
 
 cal = load("results/calibration/calibration_alternatives.json")["models"]
 mg, g3 = cal["medgemma-27b-it"], cal["gemma-3-27b-it"]
-near("4.2 Platt ECE", mg["eval"]["platt"]["ece"], 0.006)
-near("4.2 isotonic ECE", mg["eval"]["isotonic"]["ece"], 0.005)
+near("4.2 Platt ECE", mg["eval"]["platt"]["ece"], 0.010)
+near("4.2 isotonic ECE", mg["eval"]["isotonic"]["ece"], 0.011)
 near("4.2 MedGemma isotonic Brier", mg["eval"]["isotonic"]["brier"], 0.239)
 near("4.2 MedGemma constant Brier", mg["eval"]["constant"]["brier"], 0.240)
-near("4.2 Platt slope", mg["params"]["platt_slope"], -0.024)
-near("4.2 MedGemma resolution", mg["eval"]["raw"]["brier_decomposition"]["resolution"], 0.0007, nd=4)
-near("4.2 MedGemma external Platt Brier", mg["external"]["platt"]["brier"], 0.231)
-near("4.2 MedGemma external isotonic Brier", mg["external"]["isotonic"]["brier"], 0.228)
-near("4.2 MedGemma external constant Brier", mg["external"]["constant"]["brier"], 0.229)
+near("4.2 Platt slope", mg["params"]["platt_slope"], -0.017)
+near("4.2 MedGemma resolution", mg["eval"]["raw"]["brier_decomposition"]["resolution"], 0.0006, nd=4)
+near("4.2 MedGemma external Platt Brier", mg["external"]["platt"]["brier"], 0.233)
+near("4.2 MedGemma external isotonic Brier", mg["external"]["isotonic"]["brier"], 0.230)
+near("4.2 MedGemma external constant Brier", mg["external"]["constant"]["brier"], 0.231)
 near("4.2 Gemma-3 isotonic Brier", g3["eval"]["isotonic"]["brier"], 0.200)
 near("4.2 Gemma-3 constant Brier", g3["eval"]["constant"]["brier"], 0.230)
 near("4.2 Gemma-3 external isotonic Brier", g3["external"]["isotonic"]["brier"], 0.186)
@@ -344,14 +351,14 @@ for k, printed in (("2", 0.070), ("3", 0.090), ("4", 0.102)):
     near(f"4.5 K ablation V3 K={k}", kab["V3"]["by_k"][k]["mean_gap"], printed)
 near("4.5 K ablation pooled K=9", kab["pooled"]["by_k"]["9"]["mean_gap"], 0.124)
 near("4.5 K ablation pooled K=8 without variant 2", kab["pooled"]["by_k"]["8"]["mean_gap_without_variant_2"], 0.067)
-near("4.5 K ablation V3W K=2", kab["V3W"]["by_k"]["2"]["mean_gap"], 0.063)
+near("4.5 K ablation V3W K=2", kab["V3W"]["by_k"]["2"]["mean_gap"], 0.067)
 kab_ext = load(f"{CONS}/k_ablation.json")["splits"]["test"]
 near("4.5 K ablation external pooled K=9", kab_ext["pooled"]["by_k"]["9"]["mean_gap"], 0.062)
 near("4.5 K ablation external pooled K=8 without variant 2",
      kab_ext["pooled"]["by_k"]["8"]["mean_gap_without_variant_2"], -0.017)
 v3w_ext_k = [kab_ext["V3W"]["by_k"][k]["mean_gap"] for k in ("2", "3", "4", "5")]
-near("4.5 K ablation external V3W min", min(v3w_ext_k), 0.036)
-near("4.5 K ablation external V3W max", max(v3w_ext_k), 0.049)
+near("4.5 K ablation external V3W min", min(v3w_ext_k), 0.046)
+near("4.5 K ablation external V3W max", max(v3w_ext_k), 0.057)
 near("4.5 K ablation without variant 2 K=2", kab["V3"]["by_k"]["2"]["mean_gap_without_variant_2"], 0.023)
 near("4.5 K ablation without variant 2 K=4", kab["V3"]["by_k"]["4"]["mean_gap_without_variant_2"], 0.033)
 
@@ -365,7 +372,7 @@ near("4.5 Gemma-3 budget gain val high", 100 * (bud["gemma-3-27b-it verbalized|v
 
 clip = load("results/calibration/nll_clip_sensitivity.json")["models"]["medgemma-27b-it"]
 present("3.3 confidences at 100", f"{clip['n_at_100']} of MedGemma's 8,003")
-near("3.3 NLL at T=1 with clip 1e-2", clip["by_clip"]["0.01"]["nll_T1"], 1.844)
+near("3.3 NLL at T=1 with clip 1e-2", clip["by_clip"]["0.01"]["nll_T1"], 1.828)
 checks += 1
 if not all(r["sufficient_condition_holds"] and r["monotone_decreasing_on_grid"] for r in clip["by_clip"].values()):
     fails.append("3.3 clip sensitivity: condition or monotonicity fails for some clip")
@@ -374,17 +381,17 @@ v3w_ext = load(f"{CONS}/V3W_test/weighted_routing.json")["weighted_cohort"]["con
 present("4.5 V3W external gap", gap_string(v3w_ext["consistency_minus_random"]))
 present("4.5 V3W external vs averaged confidence", gap_string(v3w_ext["consistency_minus_mean5_conf"]))
 present("4.5 V3W external voting gain", gap_string(v3w_ext["voting_gain_accuracy"]))
-present("Table 10 V3W external", "$+0.041$ [0.024, 0.060] \\\\")
+present("Table 10 V3W external", "$+0.054$ [0.036, 0.073] \\\\")
 lvo_ext = load(f"{CONS}/V3W_test/leave_variant_out.json")["weighted_cohort"]["contrasts"]
 drops = [lvo_ext[f"drop_{k}:consistency_minus_random"]["exact"]["gap_point"] for k in range(5)]
-exact("4.5 V3W external leave-one-out min", min(drops), 0.025)
-exact("4.5 V3W external leave-one-out max", max(drops), 0.059)
+exact("4.5 V3W external leave-one-out min", min(drops), 0.036)
+exact("4.5 V3W external leave-one-out max", max(drops), 0.070)
 holm_fam = load("results/multiplicity/holm.json")
 checks += 1
 if holm_fam["family_size_present"] != 19 or holm_fam["n_pending"] != 0:
     fails.append("Holm family is not the declared 19 with none pending")
 present("Holm family size in Methods", "rest on 19 contrasts")
-present("Table S1 V3W external row", "V3W consistency $-$ random (test) & 72 & $+0.041$", supp, "supplementary.tex")
+present("Table S1 V3W external row", "V3W consistency $-$ random (test) & 72 & $+0.054$", supp, "supplementary.tex")
 
 qn = load("results/quiltnet/summary.json")
 for split, acc, auroc, gap in (("val", 52.7, 0.672, 0.148), ("test", 50.4, 0.684, 0.165)):
@@ -403,11 +410,11 @@ near("5.1 NORM F1 under V4B", pilot["V4B"]["per_class"]["NORM"]["f1"], 0.53, nd=
 
 # --- text that must be present or gone ----------------------------------------
 present("endpoint named", "api.ai.it.ufl.edu")
-present("code availability version DOI", "10.5281/zenodo.23441371")
+present("code availability version DOI", "10.5281/zenodo.23676823")
 present("code availability concept DOI", "10.5281/zenodo.22245989")
 absent("superseded version DOI cited as current", "the version described here is v3.0")
 cff = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
-present("CITATION.cff version DOI", "doi: 10.5281/zenodo.23441371", cff, "CITATION.cff")
+present("CITATION.cff version DOI", "doi: 10.5281/zenodo.23676823", cff, "CITATION.cff")
 present("gap convention", "computed at full precision and rounded once")
 present("A_AUC estimator", r"\frac{1}{0.99} \int_0^{0.99}")
 for gone in (
@@ -454,8 +461,65 @@ for phrase in ("submitted version", "earlier version", "previous version", "resp
     absent(f"narration in main.tex: {phrase}", phrase)
     absent(f"narration in supplementary.tex: {phrase}", phrase, supp, "supplementary.tex")
 
+# --- Labels read from the LABEL line (scripts/rescore_labels.py) ---------------
+for v, printed in (("V2", 0.213), ("V3", 0.301), ("V4", 0.283), ("V4B", 0.227), ("V5", 0.294)):
+    near(f"T2 pilot macro F1 {v}", load(f"results/zeroshot/medgemma-27b-it/{v}/metrics.json")["macro_f1"], printed)
+    present(f"T2 row {v}", f" & {printed:.3f} \\\\")
+present("3.2 selected prompt", "V3 achieved the best macro F1 (0.301)")
+cls = load("results/classification_stats.json")
+for m, s, acc, mac, wf in (("medgemma-27b-it", "val", 0.4063, 0.3272, 0.3455),
+                           ("gemma-3-27b-it", "val", 0.3548, 0.2702, 0.2972)):
+    near(f"T3 accuracy {m}", cls[m][s]["accuracy"], acc, nd=4)
+    near(f"T3 macro F1 {m}", cls[m][s]["macro_f1"], mac, nd=4)
+    near(f"T3 weighted F1 {m}", cls[m][s]["weighted_f1"], wf, nd=4)
+for m, s, c, printed in (("medgemma-27b-it", "val", "background", 0.750), ("medgemma-27b-it", "test", "background", 0.833),
+                         ("medgemma-27b-it", "val", "debris", 0.344), ("medgemma-27b-it", "test", "debris", 0.077),
+                         ("medgemma-27b-it", "test", "cancer-associated stroma", 0.009),
+                         ("gemma-3-27b-it", "val", "normal colon mucosa", 0.101),
+                         ("gemma-3-27b-it", "val", "cancer-associated stroma", 0.326),
+                         ("gemma-3-27b-it", "val", "colorectal adenocarcinoma epithelium", 0.559),
+                         ("gemma-3-27b-it", "test", "normal colon mucosa", 0.253)):
+    near(f"T4 {m} {s} {c}", cls[m][s]["per_class_f1"][c], printed)
+xc = load("results/stage6/cross_center_scalings.json")["scalings"]
+near("T7 MedGemma drop", xc["MedGemma-27b-it"]["drop_percentage_points"], 0.054)
+near("T7 MedGemma retained", xc["MedGemma-27b-it"]["above_chance_retained_majority_class"], 0.63, nd=2)
+near("T7 Gemma-3 drop", xc["Gemma-3-27b-it"]["drop_percentage_points"], 0.045)
+cinfo = load("results/calibration/confidence_information.json")["results"]
+for m, s, printed in (("medgemma-27b-it", "val_full", 0.499), ("medgemma-27b-it", "test_full", 0.528),
+                      ("gemma-3-27b-it", "val_full", 0.698), ("gemma-3-27b-it", "test_full", 0.709)):
+    near(f"4.2 AUROC {m} {s}", cinfo[m][s]["conf_correct_auroc"], printed)
+bycls = load("results/calibration/confidence_by_class.json")["results"]["medgemma-27b-it"]["val_full"]
+for c, (pt, lo, hi) in (("background", (0.299, 0.271, 0.325)), ("debris", (0.533, 0.516, 0.551))):
+    r = bycls["by_predicted_class"][c]
+    near(f"4.3 within-class AUROC {c}", r["within_class_auroc"], pt)
+    near(f"4.3 within-class lower {c}", r["within_class_auroc_bootstrap"]["ci_2.5"], lo)
+    near(f"4.3 within-class upper {c}", r["within_class_auroc_bootstrap"]["ci_97.5"], hi)
+near("4.3 MedGemma class-mean spread", bycls["spread_of_mean_confidence_across_classes"], 0.016)
+re5 = load(f"{CONS}/controls/summary.json")["swap"]["rescoring_effect"]
+near("6 swap gap, earlier rule", re5["gap_vs_random_whole_text_rule"], 0.108)
+near("6 swap gap, LABEL line", re5["gap_vs_random_label_line"], 0.153)
+near("6 swap re-scoring difference", re5["difference"], 0.045)
+resc = load("results/data/label_rescoring.json")["zeroshot"]
+for key, printed in (("medgemma-27b-it/V3_full", 193), ("medgemma-27b-it/V3_full_test", 123),
+                     ("gemma-3-27b-it/V3_full", 54), ("gemma-3-27b-it/V3_full_test", 13)):
+    checks += 1
+    if resc[key]["n_relabelled"] != printed:
+        fails.append(f"3.2 relabelled {key}: artifact {resc[key]['n_relabelled']} vs printed {printed}")
+vcw = load(f"{CONS}/variant_confidence_weighted.json")["runs"]
+near("S8 V5 variant 2 AUROC without unknown", vcw["V5"]["variants"]["variant_2"]["without_unknown"]["cohort_auroc"], 0.619)
+for run, printed in (("V3W", -0.030), ("V3W_test", -0.005)):
+    near(f"S8 {run} paraphrase 4 gap without unknown",
+         vcw[run]["variants"]["variant_4"]["without_unknown"]["cohort_gap_vs_random"]["gap_point"], printed)
+for run, counts in (("V3W", [0, 2, 4, 0, 506]), ("V3W_test", [0, 0, 0, 0, 345])):
+    checks += 1
+    if [vcw[run]["variants"][f"variant_{k}"]["n_unknown"] for k in range(5)] != counts:
+        fails.append(f"S8 {run} unknown counts differ from {counts}")
+for stale in ("50.4\\%", "ranks about as well as Gemma-3's", "All four models", "Two of MedGemma's three"):
+    absent(f"round-5 stale text: {stale}", stale)
+absent("round-5 stale client version", "3.6.0", supp, "supplementary.tex")
+
 if letter:
-    present("letter answers every Reviewer 3 item", "### R3.15", letter, "letter")
+    present("letter answers every Reviewer 1 item", "### R1.5", letter, "letter")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--final", action="store_true")
