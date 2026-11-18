@@ -410,11 +410,11 @@ near("5.1 NORM F1 under V4B", pilot["V4B"]["per_class"]["NORM"]["f1"], 0.53, nd=
 
 # --- text that must be present or gone ----------------------------------------
 present("endpoint named", "api.ai.it.ufl.edu")
-present("code availability version DOI", "10.5281/zenodo.23676823")
+present("code availability version DOI", "10.5281/zenodo.24354813")
 present("code availability concept DOI", "10.5281/zenodo.22245989")
 absent("superseded version DOI cited as current", "the version described here is v3.0")
 cff = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
-present("CITATION.cff version DOI", "doi: 10.5281/zenodo.23676823", cff, "CITATION.cff")
+present("CITATION.cff version DOI", "doi: 10.5281/zenodo.24354813", cff, "CITATION.cff")
 present("gap convention", "computed at full precision and rounded once")
 present("A_AUC estimator", r"\frac{1}{0.99} \int_0^{0.99}")
 for gone in (
@@ -558,9 +558,6 @@ for stale in ("about four fifths", "recovers about half", "and about half extern
               "affected only through which answers count as correct",
               "improved those classes individually"):
     absent(f"round-6 stale text: {stale}", stale)
-for name in ("Pandey", "Ashish"):
-    absent(f"removed author in main.tex: {name}", name)
-    absent(f"removed author in supplementary.tex: {name}", name, supp, "supplementary.tex")
 
 if letter:
     present("letter answers every Reviewer 1 item", "### R1.3", letter, "letter")

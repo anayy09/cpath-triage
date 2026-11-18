@@ -36,16 +36,19 @@ keywords:
   - verbalized confidence
   - uncertainty quantification
   - colorectal
-version: v6.0
-date-released: 2026-10-26
-doi: 10.5281/zenodo.23676823
+version: v7.0
+date-released: 2026-11-18
+doi: 10.5281/zenodo.24354813
 identifiers:
   - type: doi
     value: 10.5281/zenodo.22245989
     description: Concept DOI, resolving to the most recent version of this record.
   - type: doi
+    value: 10.5281/zenodo.24354813
+    description: Version DOI for v7.0, the release described in the manuscript. Scores each variant of the original five-prompt family under both label rules on the image-swap control, and the wording-only family by the earlier rule, so the two families can be compared on one rule.
+  - type: doi
     value: 10.5281/zenodo.23676823
-    description: Version DOI for v6.0, the release described in the manuscript. Reads every label from the response's LABEL line and re-scores every saved run that kept its response text, keeping the earlier labels beside the new ones; adds the parser, the re-scoring script and its per-run counts.
+    description: Version DOI for v6.0, superseded. Reads every label from the response's LABEL line and re-scores every saved run that kept its response text, keeping the earlier labels beside the new ones; adds the parser, the re-scoring script and its per-run counts.
   - type: doi
     value: 10.5281/zenodo.23441371
     description: Version DOI for v5.0, superseded. Adds the wording-only family on the external cohort, each prompt variant's own confidence, further calibration maps, agreement against the number of prompts, operating points with query cost, per-class results under each pilot prompt, the QuiltNet baseline and the per-call logs.
