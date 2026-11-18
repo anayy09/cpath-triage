@@ -2,7 +2,7 @@
 
 Code and prediction artifacts for a diagnostic study of **verbalized confidence** in an open medical vision-language model, evaluated on colorectal H&E histopathology patches.
 
-The question is narrow: when MedGemma-27b-it writes an integer confidence next to a tissue label, does that number carry enough information about correctness to drive selective prediction? For the prompt we selected, it does not. Its base model Gemma-3-27b-it, given the identical prompt, produces a confidence that does route above random. Agreement across five prompt variants routes where MedGemma's stated number does not, mostly because one restructured variant departs from the rest, and that variant's own stated confidence ranks as well. Agreement across five paraphrases that change only the wording routes on validation and about half as well on the external cohort, and the external margins of agreement over confidence do not survive a plausible within-slide correlation.
+The question is narrow: when MedGemma-27b-it writes an integer confidence next to a tissue label, does that number carry enough information about correctness to drive selective prediction? For the prompt we selected, it does not. Its base model Gemma-3-27b-it, given the identical prompt, produces a confidence that does route above random. Agreement across five prompt variants routes where MedGemma's stated number does not, mostly because one restructured variant departs from the rest, and that variant's own stated confidence ranks as well. Agreement across five paraphrases that change only the wording also routes: read by the same earlier parsing rule as the original variants, it recovers about three quarters of their signal on validation and two fifths on the external cohort, and the external margins of agreement over confidence do not survive a plausible within-slide correlation.
 
 This is not a proposal for a deployable triage system. Zero-shot accuracy here is 40.6% (MedGemma) and 35.5% (Gemma-3) on nine classes, so neither model is usable as a standalone classifier, and the repository contains no system anyone should deploy. What it contains is the measurement of a confidence signal, the routing analysis that follows from it, and the artifacts needed to check both.
 
@@ -62,7 +62,7 @@ The inclusion weights behind Tables 8 to 10 come from `scripts/consistency_selec
 
 The table bodies of S6 and S8 to S12 are generated, not typed, by `scripts/supplement_tables.py` into `results/supplement/generated_tables.tex`.
 
-The image controls reported in Section 4.5 are summarized by `scripts/analyze_image_controls.py` into `results/consistency/medgemma-27b-it/controls/summary.json`. Supporting analyses that appear only in the prose: `scripts/confidence_information.py` (confidence-correctness AUROC, mutual information with a permutation null, confidence by predicted class), `scripts/verify_calibration_claims.py` (the T = 200 bound identities) and `scripts/parse_failure_check.py` (Gemma-3's eight off-list answers and how each artifact treats them). `scripts/verify_partitions.py` establishes that the 64 px and 224 px releases index the same patches and that no slide or patient identifier exists in the distributed archives, which is why Table S1 is a sensitivity analysis rather than a cluster bootstrap.
+The image controls reported in Section 4.5 are summarized by `scripts/analyze_image_controls.py` into `results/consistency/medgemma-27b-it/controls/summary.json`; `scripts/swap_variant_rules.py` scores each variant of the image-swap control under both parsing rules (`.../controls/swap/variant_rules.json`), and `consistency_population.py --stored-labels` scores the V3W family on the earlier rule for comparison with the original variants (`.../{V3W,V3W_test}/*_stored_labels.json`). Supporting analyses that appear only in the prose: `scripts/confidence_information.py` (confidence-correctness AUROC, mutual information with a permutation null, confidence by predicted class), `scripts/verify_calibration_claims.py` (the T = 200 bound identities) and `scripts/parse_failure_check.py` (Gemma-3's eight off-list answers and how each artifact treats them). `scripts/verify_partitions.py` establishes that the 64 px and 224 px releases index the same patches and that no slide or patient identifier exists in the distributed archives, which is why Table S1 is a sensitivity analysis rather than a cluster bootstrap.
 
 ### Figures
 
@@ -105,9 +105,11 @@ for s in val test; do
 done
 for s in val test; do
   python scripts/consistency_population.py --version V3W --selection-from V3 --split $s
+  python scripts/consistency_population.py --version V3W --selection-from V3 --split $s --stored-labels
 done
 python scripts/consistency_secondary_weighted.py
 python scripts/analyze_image_controls.py
+python scripts/swap_variant_rules.py
 python scripts/variant_confidence_weighted.py
 python scripts/k_ablation.py
 python scripts/calibration_alternatives.py
