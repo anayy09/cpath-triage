@@ -49,6 +49,7 @@ expectation of random routing, the accuracy of the routed outcome.
 Usage:
     python scripts/consistency_population.py --split val
     python scripts/consistency_population.py --split test
+    python scripts/consistency_population.py --version V3W --selection-from V3 --split val --stored-labels
 """
 
 from __future__ import annotations
@@ -208,8 +209,15 @@ def main() -> int:
              "selection cells and full-scale predictions are used; the alignment check below "
              "refuses to proceed unless the patches are identical and in the same order.",
     )
+    parser.add_argument(
+        "--stored-labels", action="store_true",
+        help="Score a re-scored run on the labels the earlier whole-text parser stored (*_regex "
+             "columns) and write every output with a _stored_labels suffix. This is the rule to use "
+             "when the result is compared with a run that kept no response text.",
+    )
     args = parser.parse_args()
-    print(f"seed={args.seed}  n_boot={args.n_boot}  split={args.split}")
+    tag = "_stored_labels" if args.stored_labels else ""
+    print(f"seed={args.seed}  n_boot={args.n_boot}  split={args.split}  labels={'stored' if tag else 'LABEL line'}")
 
     suffix = "_test" if args.split == "test" else ""
     root = PROJECT_ROOT / "results" / "consistency" / args.model
@@ -230,6 +238,14 @@ def main() -> int:
             return 1
 
     df = pd.read_parquet(paths["cons"])
+    if args.stored_labels:
+        regex_cols = [c for c in df.columns if c.endswith("_regex")]
+        if not regex_cols:
+            print(f"{paths['cons']} was never re-scored, so its labels are already the stored ones; "
+                  "run without --stored-labels", file=sys.stderr)
+            return 1
+        for c in regex_cols:
+            df[c[: -len("_regex")]] = df[c]
     wdf = pd.read_parquet(paths["weights"])
     if df["arr_idx"].tolist() != wdf["arr_idx"].tolist():
         print("weights.parquet is not aligned with predictions.parquet", file=sys.stderr)
@@ -321,6 +337,7 @@ def main() -> int:
     }
     common = {
         "model": args.model, "version": args.version, "split": args.split,
+        "labels": "stored by the earlier whole-text parser" if tag else "as in predictions.parquet",
         "seed": args.seed, "n_boot": args.n_boot, "n_patches": len(df),
         "cohort_size_weighted": round(float(w.sum()), 3),
     }
@@ -352,7 +369,7 @@ def main() -> int:
             },
         },
     }
-    write(cons_dir / "weighted_routing.json", out1)
+    write(cons_dir / f"weighted_routing{tag}.json", out1)
 
     # ---- 2. fixed outcome -----------------------------------------------------
     specs2 = {}
@@ -371,7 +388,7 @@ def main() -> int:
         for s in ("consistency", "single_query_conf", "mean5_conf"):
             contrasts2[f"{oname}_outcome:{s}_minus_random"] = (f"{s}|{oname}", f"random|{oname}")
     res2 = analyse(specs2, contrasts2, w, strata, args.n_boot, args.seed)
-    write(cons_dir / "fixed_outcome.json", {
+    write(cons_dir / f"fixed_outcome{tag}.json", {
         **common,
         "note": (
             "every signal routes the same outcome: modal-vote correctness, then "
@@ -399,7 +416,7 @@ def main() -> int:
             "modal_accuracy_weighted": round(weighted_accuracy(corr_s, w), 4),
         }
     res3 = analyse(specs3, contrasts3, w, strata, args.n_boot, args.seed)
-    write(cons_dir / "leave_variant_out.json", {
+    write(cons_dir / f"leave_variant_out{tag}.json", {
         **common,
         "variant_order": VARIANT_NAMES,
         "note": (
@@ -426,7 +443,7 @@ def main() -> int:
     }
     res4 = analyse(specs4, contrasts4, w, strata, args.n_boot, args.seed)
     top = cmod._top_pairs(val_matrix, k=5)
-    write(cons_dir / "confusability_valweights.json", {
+    write(cons_dir / f"confusability_valweights{tag}.json", {
         **common,
         "matrix_source": matrix_note,
         "matrix_n_patches": len(matrix_rows),
@@ -466,7 +483,7 @@ def main() -> int:
 
         res5a = analyse(sub(specs1), contrasts1, w_np, strata[keep_mask], args.n_boot, args.seed)
         res5b = analyse(sub(specs2), contrasts2, w_np, strata[keep_mask], args.n_boot, args.seed)
-        write(cons_dir / "pilot_excluded.json", {
+        write(cons_dir / f"pilot_excluded{tag}.json", {
             **common,
             "n_patches": int(keep_mask.sum()),
             "n_pilot_removed": int((~keep_mask).sum()),

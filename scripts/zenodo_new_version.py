@@ -50,10 +50,43 @@ BASE = "https://zenodo.org/api"
 # Point at the newest full-archive version in the lineage. Zenodo derives a new
 # version from whichever record this names, so pointing it at the GitHub snapshot
 # (22928010, code only) would branch from an archive without the prediction artifacts.
-RECORD_ID = "23441371"          # the published v5.0 full archive
+RECORD_ID = "23676823"          # the published v6.0 full archive
 CONCEPT_ID = "22245989"         # concept record, stable across versions
 DEFAULT_ZIP = PROJECT_ROOT / "build" / "zenodo_deposit.zip"
 TIMEOUT = httpx.Timeout(60.0, read=600.0, write=600.0)
+
+
+def creators_from_citation(path: Path = PROJECT_ROOT / "CITATION.cff") -> list[dict]:
+    """
+    Zenodo creators from the top-level authors block of CITATION.cff, in its order.
+
+    A new version inherits the previous version's creators, so an author change
+    made in CITATION.cff would otherwise not reach the record. Taking the list
+    from the file keeps one source of truth for names and affiliations.
+    """
+    authors: list[dict] = []
+    in_block = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith(" "):
+            in_block = line.rstrip() == "authors:"
+            continue
+        if not in_block or ":" not in line:
+            continue
+        key, _, value = line.strip().removeprefix("- ").partition(":")
+        if line.strip().startswith("- "):
+            authors.append({})
+        authors[-1][key.strip()] = value.strip().strip('"')
+    if not authors:
+        raise SystemExit(f"No authors in {path}")
+    out = []
+    for a in authors:
+        entry = {"name": f"{a['family-names']}, {a['given-names']}"}
+        if a.get("affiliation"):
+            entry["affiliation"] = a["affiliation"]
+        if a.get("orcid"):
+            entry["orcid"] = str(a["orcid"]).rsplit("/", 1)[-1]
+        out.append(entry)
+    return out
 
 
 def load_token() -> str:
@@ -112,6 +145,11 @@ def main() -> int:
     ap.add_argument("--draft-id", default=None,
                     help="Operate on an existing unsubmitted draft instead of opening a new "
                          "version. Use this to resume after an interrupted run.")
+    ap.add_argument("--describe", type=Path, default=None,
+                    help="Text file whose contents are appended to the description as one "
+                         "paragraph, unless the description already contains them.")
+    ap.add_argument("--related-url", default=None,
+                    help="Replace the isSupplementTo software link, e.g. the GitHub tree of the tag.")
     ap.add_argument("--publish", action="store_true",
                     help="Publish. Irreversible: a published version cannot be deleted.")
     args = ap.parse_args()
@@ -184,6 +222,18 @@ def main() -> int:
         meta["version"] = args.version
         meta.pop("doi", None)          # let Zenodo mint the new version DOI
         meta.pop("prereserve_doi", None)
+        meta["creators"] = creators_from_citation()
+        if args.describe:
+            para = args.describe.read_text(encoding="utf-8").strip()
+            if para not in meta.get("description", ""):
+                meta["description"] = meta.get("description", "") + f"<p>{para}</p>"
+        if args.related_url:
+            rel = [r for r in meta.get("related_identifiers", [])
+                   if not (r.get("relation") == "isSupplementTo" and r.get("scheme") == "url")]
+            rel.append({"identifier": args.related_url, "relation": "isSupplementTo",
+                        "resource_type": "software", "scheme": "url"})
+            meta["related_identifiers"] = rel
+        print("Creators: " + "; ".join(c["name"] for c in meta["creators"]))
         show(c.put(f"{BASE}/deposit/depositions/{draft_id}",
                    json={"metadata": meta}), "Setting metadata")
 

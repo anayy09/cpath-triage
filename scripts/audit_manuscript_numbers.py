@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CONS = "results/consistency/medgemma-27b-it"
 tex = (ROOT / "paper" / "latex" / "main.tex").read_text(encoding="utf-8")
 supp = (ROOT / "paper" / "latex" / "supplementary.tex").read_text(encoding="utf-8")
-letter_path = ROOT / "paper" / "RESPONSE_LETTER_SR_R5.md"
+letter_path = ROOT / "paper" / "RESPONSE_LETTER_SR_R6.md"
 letter = letter_path.read_text(encoding="utf-8") if letter_path.exists() else ""
 
 fails: list[str] = []
@@ -410,11 +410,11 @@ near("5.1 NORM F1 under V4B", pilot["V4B"]["per_class"]["NORM"]["f1"], 0.53, nd=
 
 # --- text that must be present or gone ----------------------------------------
 present("endpoint named", "api.ai.it.ufl.edu")
-present("code availability version DOI", "10.5281/zenodo.23676823")
+present("code availability version DOI", "10.5281/zenodo.24354813")
 present("code availability concept DOI", "10.5281/zenodo.22245989")
 absent("superseded version DOI cited as current", "the version described here is v3.0")
 cff = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
-present("CITATION.cff version DOI", "doi: 10.5281/zenodo.23676823", cff, "CITATION.cff")
+present("CITATION.cff version DOI", "doi: 10.5281/zenodo.24354813", cff, "CITATION.cff")
 present("gap convention", "computed at full precision and rounded once")
 present("A_AUC estimator", r"\frac{1}{0.99} \int_0^{0.99}")
 for gone in (
@@ -518,8 +518,49 @@ for stale in ("50.4\\%", "ranks about as well as Gemma-3's", "All four models", 
     absent(f"round-5 stale text: {stale}", stale)
 absent("round-5 stale client version", "3.6.0", supp, "supplementary.tex")
 
+# --- Round 6: variant 2 under both rules, one-rule shares, paraphrase 4 left out --
+vr = load(f"{CONS}/controls/swap/variant_rules.json")
+checks += 1
+differ = [vr["per_variant"][str(k)]["answers_read_differently"] for k in range(5)]
+if differ != [10, 32, 0, 13, 38]:
+    fails.append(f"S8 swap answers read differently: artifact {differ} vs printed [10, 32, 0, 13, 38]")
+v2 = vr["per_variant"]["2"]
+for rule in ("label_line", "earlier_rule"):
+    near(f"6/S8 swap variant 2 AUROC ({rule})", v2[rule]["auroc"], 0.586)
+    near(f"6/S8 swap variant 2 gap ({rule})", v2[rule]["gap_vs_random"], 0.091)
+present("S8 swap variant 2 AUROC interval", "0.586 [0.545, 0.625]", supp, "supplementary.tex")
+present("6 swap variant 2 gap interval", gap_string(v2["label_line_gap_ci"]))
+others = [vr["per_variant"][str(k)][r]["auroc"] for k in (0, 1, 3, 4) for r in ("label_line", "earlier_rule")]
+checks += 1
+if not (round(min(others), 2) >= 0.48 and round(max(others), 2) <= 0.51):
+    fails.append(f"S8 other variants' AUROC range {min(others)}-{max(others)} vs printed 0.48 to 0.51")
+ag = vr["agreement"]
+near("S8 swap agreement all five, LABEL line", ag["all_5"]["label_line"]["gap_vs_random"], 0.153)
+near("S8 swap agreement all five, earlier rule", ag["all_5"]["earlier_rule"]["gap_vs_random"], 0.108)
+near("6/S8 swap agreement without 2, LABEL line", ag["without_2"]["label_line"]["gap_vs_random"], 0.049)
+near("6/S8 swap agreement without 2, earlier rule", ag["without_2"]["earlier_rule"]["gap_vs_random"], 0.030)
+present("S8 swap without-2 difference", gap_string(ag["without_2"]["label_line_minus_earlier"]), supp, "supplementary.tex")
+v3w_old = {s: load(f"{CONS}/{s}/weighted_routing_stored_labels.json")["weighted_cohort"]["contrasts"]
+           ["consistency_minus_random"] for s in ("V3W", "V3W_test")}
+for s in v3w_old:
+    present(f"Table 10 caption V3W earlier rule ({s})", gap_string(v3w_old[s]))
+orig = {s: load(f"{CONS}/{s}/weighted_routing.json")["weighted_cohort"]["contrasts"]["consistency_minus_random"]
+        ["exact"]["gap_point"] for s in ("V3", "V3_test")}
+for s, o, lo, hi in (("V3W", "V3", 0.70, 0.80), ("V3W_test", "V3_test", 0.35, 0.45)):
+    checks += 1
+    share = v3w_old[s]["exact"]["gap_point"] / orig[o]
+    if not lo <= share <= hi:
+        fails.append(f"one-rule share {s}: {share:.3f} outside the printed wording's range {lo}-{hi}")
+for s in ("V3W", "V3W_test"):
+    lvo4 = load(f"{CONS}/{s}/leave_variant_out.json")["weighted_cohort"]["contrasts"]["drop_4:consistency_minus_random"]
+    present(f"4.5 {s} without paraphrase 4", gap_string(lvo4))
+for stale in ("about four fifths", "recovers about half", "and about half externally",
+              "affected only through which answers count as correct",
+              "improved those classes individually"):
+    absent(f"round-6 stale text: {stale}", stale)
+
 if letter:
-    present("letter answers every Reviewer 1 item", "### R1.5", letter, "letter")
+    present("letter answers every Reviewer 1 item", "### R1.3", letter, "letter")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--final", action="store_true")
